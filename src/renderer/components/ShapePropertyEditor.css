@@ -1,0 +1,201 @@
+.shape-property-editor-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.shape-property-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.28);
+  pointer-events: auto;
+}
+
+.shape-property-editor {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(360px, calc(100vw - 32px));
+  max-height: min(520px, calc(100vh - 32px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(80, 80, 80, 0.32);
+  border-radius: 6px;
+  background: var(--editor-bg);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
+  transform: translate(
+    calc(-50% + var(--editor-x)),
+    calc(-50% + var(--editor-y))
+  );
+  pointer-events: auto;
+}
+
+.shape-property-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(80, 80, 80, 0.18);
+  background: rgba(255, 255, 255, 0.45);
+  cursor: move;
+  user-select: none;
+}
+
+.shape-property-editor-title {
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #222;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.shape-property-dirty-icon {
+  color: #b3261e;
+  width: 13px;
+}
+
+.shape-property-close-button {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.5);
+  color: #222;
+  cursor: pointer;
+}
+
+.shape-property-close-button:hover {
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.shape-property-editor-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  overflow: auto;
+}
+
+.shape-property-editor-footer {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid rgba(80, 80, 80, 0.18);
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.shape-property-action-button {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid rgba(80, 80, 80, 0.3);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.76);
+  padding: 5px 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.shape-property-action-button.primary {
+  background: rgba(15, 122, 209, 0.9);
+  border-color: rgba(15, 122, 209, 1);
+  color: #fff;
+}
+
+.shape-property-action-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.shape-property-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: #222;
+}
+
+.shape-property-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 700;
+}
+
+.shape-property-required-icon {
+  width: 8px;
+  color: #c62828;
+}
+
+.shape-property-control {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid rgba(80, 80, 80, 0.32);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.78);
+  padding: 5px 7px;
+  font-size: 13px;
+}
+
+textarea.shape-property-control {
+  min-height: 70px;
+  resize: vertical;
+}
+
+.shape-property-checkbox {
+  width: 16px;
+  height: 16px;
+}
+
+.shape-property-error {
+  color: #b3261e;
+  font-size: 12px;
+}
+
+.shape-property-editor-shell.dock-mode .shape-property-editor {
+  transform: none;
+}
+
+.shape-property-editor-shell.dock-left .shape-property-editor,
+.shape-property-editor-shell.dock-right .shape-property-editor {
+  top: 0;
+  bottom: 0;
+  max-height: none;
+  height: 100vh;
+  border-radius: 0;
+}
+
+.shape-property-editor-shell.dock-left .shape-property-editor {
+  left: 0;
+}
+
+.shape-property-editor-shell.dock-right .shape-property-editor {
+  left: auto;
+  right: 0;
+}
+
+.shape-property-editor-shell.dock-top .shape-property-editor,
+.shape-property-editor-shell.dock-bottom .shape-property-editor {
+  left: 0;
+  width: 100vw;
+  max-width: none;
+  border-radius: 0;
+  transform: none;
+}
+
+.shape-property-editor-shell.dock-top .shape-property-editor {
+  top: 0;
+}
+
+.shape-property-editor-shell.dock-bottom .shape-property-editor {
+  top: auto;
+  bottom: 0;
+}
+
+.shape-property-editor-shell.dock-mode .shape-property-editor-header {
+  cursor: default;
+}

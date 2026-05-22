@@ -32,10 +32,18 @@
     "vite": "^8.0.10"
   },
   "dependencies": {
+    "@fortawesome/fontawesome-svg-core": "^7.2.0",
+    "@fortawesome/free-solid-svg-icons": "^7.2.0",
+    "@fortawesome/react-fontawesome": "^3.3.1",
+    "bootstrap": "^5.3.8",
     "electron-squirrel-startup": "^1.0.1",
     "immer": "^11.1.7",
+    "konva": "^10.3.0",
+    "pdfjs-dist": "^5.4.296",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
+    "react-konva": "^19.2.4",
+    "react-pdf": "^10.4.1",
     "zustand": "^5.0.13"
   }
 }

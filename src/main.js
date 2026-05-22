@@ -1,19 +1,154 @@
-import { app, BrowserWindow, session } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, session } from 'electron';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
 
-// Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (started) {
   app.quit();
 }
 
-let mainWindow
+let mainWindow;
 
-const createWindow = () => {
-  // Create the browser window.
-  // const mainWindow = new BrowserWindow({
+const recentFilesName = 'recent-files.json';
+
+function getRecentFilesPath() {
+  return path.join(app.getPath('userData'), recentFilesName);
+}
+
+function getPdfJsonPath(pdfPath) {
+  return pdfPath.replace(/\.pdf$/i, '.pdfJson');
+}
+
+async function readRecentFiles() {
+  try {
+    const text = await fs.readFile(getRecentFilesPath(), 'utf8');
+    const files = JSON.parse(text);
+    return Array.isArray(files) ? files.filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writeRecentFiles(files) {
+  await fs.mkdir(app.getPath('userData'), { recursive: true });
+  await fs.writeFile(
+    getRecentFilesPath(),
+    JSON.stringify(files.slice(0, 10), null, 2),
+    'utf8',
+  );
+}
+
+async function rememberRecentFile(pdfPath) {
+  const oldFiles = await readRecentFiles();
+  const nextFiles = [
+    pdfPath,
+    ...oldFiles.filter((filePath) => filePath !== pdfPath),
+  ].slice(0, 10);
+
+  await writeRecentFiles(nextFiles);
+  return nextFiles;
+}
+
+async function readPdfJson(pdfPath) {
+  const jsonPath = getPdfJsonPath(pdfPath);
+
+  try {
+    const text = await fs.readFile(jsonPath, 'utf8');
+    return {
+      jsonPath,
+      data: JSON.parse(text),
+    };
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return {
+        jsonPath,
+        data: null,
+      };
+    }
+
+    throw error;
+  }
+}
+
+async function openPdfByPath(pdfPath) {
+  const pdfBuffer = await fs.readFile(pdfPath);
+  const jsonResult = await readPdfJson(pdfPath);
+  const recentFiles = await rememberRecentFile(pdfPath);
+
+  return {
+    pdfPath,
+    pdfName: path.basename(pdfPath),
+    pdfData: pdfBuffer.buffer.slice(
+      pdfBuffer.byteOffset,
+      pdfBuffer.byteOffset + pdfBuffer.byteLength,
+    ),
+    pdfJsonPath: jsonResult.jsonPath,
+    pdfJson: jsonResult.data,
+    recentFiles,
+  };
+}
+
+function registerIpcHandlers() {
+  ipcMain.handle('pdf:getRecentFiles', async () => readRecentFiles());
+
+  ipcMain.handle('pdf:openDialog', async () => {
+    const recentFiles = await readRecentFiles();
+    const defaultPath = recentFiles[0] ? path.dirname(recentFiles[0]) : undefined;
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Open PDF',
+      defaultPath,
+      properties: ['openFile'],
+      filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
+    });
+
+    if (result.canceled || !result.filePaths[0]) {
+      return { canceled: true, recentFiles };
+    }
+
+    return {
+      canceled: false,
+      ...(await openPdfByPath(result.filePaths[0])),
+    };
+  });
+
+  ipcMain.handle('pdf:openRecent', async (_event, pdfPath) => {
+    return openPdfByPath(pdfPath);
+  });
+
+  ipcMain.handle('pdf:saveJson', async (_event, pdfPath, data) => {
+    const jsonPath = getPdfJsonPath(pdfPath);
+    const nextData = {
+      ...data,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await fs.writeFile(jsonPath, JSON.stringify(nextData, null, 2), 'utf8');
+
+    return {
+      jsonPath,
+      savedAt: nextData.updatedAt,
+    };
+  });
+
+  ipcMain.handle('pdf:confirmCloseDirty', async () => {
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: 'warning',
+      buttons: ['Save and close', "Don't save", 'Cancel'],
+      defaultId: 0,
+      cancelId: 2,
+      title: 'Unsaved changes',
+      message: 'The current PDF has unsaved data.',
+      detail: 'Do you want to save the .pdfJson file before closing?',
+    });
+
+    if (result.response === 0) return 'save';
+    if (result.response === 1) return 'discard';
+    return 'cancel';
+  });
+}
+
+function createWindow() {
   mainWindow = new BrowserWindow({
-
     width: 800,
     height: 600,
     webPreferences: {
@@ -21,26 +156,16 @@ const createWindow = () => {
     },
   });
 
-  // and load the index.html of the app.
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
-
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
-    // mainWindow.loadURL('https://www.meituan.com/')
-
   } else {
     mainWindow.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
   }
+}
 
-  //mr:: 必须先打开。
-  mainWindow.webContents.openDevTools();
-};
-
-// This method will be called when Electron has finished
-// initialization and is ready to create browser windows.
-// Some APIs can only be used after this event occurs.
 app.whenReady().then(async () => {
-
   createWindow();
+  registerIpcHandlers();
 
   const reactDevToolsPath = path.join(
     'C:/Users/Admin/AppData/Local/Google/Chrome/User Data/Default/Extensions/fmkadmapgofadopljbjfkapdkoienihi/7.0.1_0'
@@ -48,58 +173,20 @@ app.whenReady().then(async () => {
 
   try {
     const extension = await session.defaultSession.extensions.loadExtension(
-      // const extension = await mainWindow.webContents.session.loadExtension(
       reactDevToolsPath,
       {
         allowFileAccess: true,
-      }
+      },
     );
 
     console.log('React DevTools loaded:', extension.name);
-
-
-
-    // mainWindow.webContents.openDevTools();
-
   } catch (error) {
     console.error('React DevTools load failed:', error);
   }
-
-
-
-  //3️⃣ 页面加载完成后再处理
-  mainWindow.webContents.once('did-finish-load', () => {
-    // 👉 延迟一点，确保页面和扩展都初始化完成
-    setTimeout(() => {
-
-      // 🔁 强制刷新页面（关键）
-      mainWindow.webContents.reloadIgnoringCache();
-
-      // 👉 再延迟一点再打开 DevTools
-      // setTimeout(() => {
-      //   mainWindow.webContents.openDevTools({ mode: 'detach' });
-      // }, 1500);
-
-    }, 2000);
-  });
-
-  // On OS X it's common to re-create a window in the app when the
-  // dock icon is clicked and there are no other windows open.
-  // app.on('activate', () => {
-  //   if (BrowserWindow.getAllWindows().length === 0) {
-  //     createWindow();
-  //   }
-  // });
 });
 
-// Quit when all windows are closed, except on macOS. There, it's common
-// for applications and their menu bar to stay active until the user quits
-// explicitly with Cmd + Q.
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
 });
-
-// In this file you can include the rest of your app's specific main process
-// code. You can also put them in separate files and import them here.
