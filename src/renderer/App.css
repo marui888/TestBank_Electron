@@ -520,6 +520,13 @@ body,
   width: auto;
 }
 
+.secondary-view-stack {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
 .region-preview-container {
   flex: 1;
   min-height: 0;
@@ -538,6 +545,58 @@ body,
   max-height: 100%;
   background: #fff;
   box-shadow: 0 0 4px rgba(0, 0, 0, 0.2);
+}
+
+.secondary-pdf-tab-list {
+  flex: 0 0 30px;
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin-top: 8px;
+  border-top: 1px solid #bbb;
+  background: #d4d4d4;
+}
+
+.secondary-pdf-tab-empty {
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  color: #555;
+  font-size: 12px;
+}
+
+.secondary-pdf-tab {
+  flex: 0 1 150px;
+  min-width: 72px;
+  max-width: 190px;
+  display: flex;
+  align-items: center;
+  border: 0;
+  border-right: 1px solid #aaa;
+  padding: 0 8px;
+  background: #e5e5e5;
+  color: #333;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.secondary-pdf-tab:hover {
+  background: #eeeeee;
+}
+
+.secondary-pdf-tab.active {
+  background: #ffffff;
+  font-weight: 700;
+}
+
+.secondary-pdf-tab-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .secondary-empty {

@@ -8,6 +8,7 @@ import {
 import { pdfjs } from "react-pdf";
 import ShapePropertyEditor from "./components/ShapePropertyEditor";
 import PdfMainView from "./components/PdfMainView";
+import PdfRegionPreview from "./components/PdfRegionPreview";
 import "./App.css";
 import sourceMetadataText from "./dummy_53_math_required1_metadata.md?raw";
 import { getQuestionListForPdfPage, parseSourceMetadata } from "./utilities";
@@ -61,6 +62,7 @@ export default function App() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [saveStatus, setSaveStatus] = useState("");
   const [debugMessages, setDebugMessages] = useState([]);
+  const [pdfDocState, setPdfDocState] = useState(null);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [pageInputValue, setPageInputValue] = useState("1");
@@ -70,9 +72,6 @@ export default function App() {
   const [autoScaleDone, setAutoScaleDone] = useState(false);
 
   const pdfMainViewRef = useRef(null);
-  const secondaryViewRef = useRef(null);
-  const regionCanvasRef = useRef(null);
-  const pdfDocRef = useRef(null);
   const pendingZoomCenterRef = useRef(null);
   const middlePanRef = useRef(null);
   const questionSegmentIdRef = useRef(null);
@@ -274,7 +273,7 @@ export default function App() {
     } else {
       clearPdfObjectUrl();
     }
-    pdfDocRef.current = null;
+    setPdfDocState(null);
     setPdfName(tab?.pdfName || "");
     setPdfPath(tab?.pdfPath || "");
     setPdfJsonPath(tab?.pdfJsonPath || "");
@@ -472,7 +471,7 @@ export default function App() {
   function resetCurrentPdfState() {
     setDisplayPdf(false);
     clearPdfObjectUrl();
-    pdfDocRef.current = null;
+    setPdfDocState(null);
     setPdfName("");
     setPdfPath("");
     setPdfJsonPath("");
@@ -728,7 +727,7 @@ export default function App() {
     });
     addDebugMessage("document:load-success", { totalPages: pdf.numPages });
 
-    pdfDocRef.current = pdf;
+    setPdfDocState(pdf);
     setTotalPages(pdf.numPages);
     if (totalPages <= 0) {
       setCurrentPage(1);
@@ -1326,105 +1325,6 @@ export default function App() {
     };
   });
 
-  useEffect(() => {
-    const canvas = regionCanvasRef.current;
-    const container = secondaryViewRef.current;
-
-    if (!canvas || !container) return undefined;
-
-    const context = canvas.getContext("2d");
-
-    if (isDrawingShape || selectedShape?.type === "line") {
-      return undefined;
-    }
-
-    if (
-      !selectedRectangle ||
-      !pdfDocRef.current ||
-      !pageSize.width ||
-      !pageSize.height
-    ) {
-      context.clearRect(0, 0, canvas.width, canvas.height);
-      canvas.removeAttribute("width");
-      canvas.removeAttribute("height");
-      canvas.style.width = "";
-      canvas.style.height = "";
-      return undefined;
-    }
-
-    let cancelled = false;
-    let renderTask = null;
-
-    async function renderSelectedRegion() {
-      const pdfDoc = pdfDocRef.current;
-      const containerWidth = container.clientWidth;
-      const containerHeight = container.clientHeight;
-      const padding = 1;
-      const availableWidth = Math.max(1, containerWidth - padding * 2);
-      const availableHeight = Math.max(1, containerHeight - padding * 2);
-
-      const regionScale = Math.min(
-        availableWidth / selectedRectangle.width,
-        availableHeight / selectedRectangle.height,
-      );
-      const pixelRatio = window.devicePixelRatio || 1;
-      const renderScale = regionScale * pixelRatio;
-
-      const canvasWidth = Math.max(
-        1,
-        Math.round(selectedRectangle.width * renderScale),
-      );
-      const canvasHeight = Math.max(
-        1,
-        Math.round(selectedRectangle.height * renderScale),
-      );
-      const cssWidth = selectedRectangle.width * regionScale;
-      const cssHeight = selectedRectangle.height * regionScale;
-
-      canvas.width = canvasWidth;
-      canvas.height = canvasHeight;
-      canvas.style.width = `${cssWidth}px`;
-      canvas.style.height = `${cssHeight}px`;
-
-      context.clearRect(0, 0, canvas.width, canvas.height);
-
-      const page = await pdfDoc.getPage(selectedRectangle.page);
-      if (cancelled) return;
-
-      const viewport = page.getViewport({
-        scale: renderScale,
-        offsetX: -selectedRectangle.x * renderScale,
-        offsetY: -selectedRectangle.y * renderScale,
-        dontFlip: false,
-      });
-
-      renderTask = page.render({
-        canvasContext: context,
-        viewport,
-      });
-
-      await renderTask.promise;
-    }
-
-    renderSelectedRegion().catch((error) => {
-      if (error?.name === "RenderingCancelledException") return;
-      console.error("[secondary] region render failed:", error);
-    });
-
-    return () => {
-      cancelled = true;
-      renderTask?.cancel();
-    };
-  }, [
-    isDrawingShape,
-    selectedShape,
-    selectedRectangle,
-    secondaryWidth,
-    contentViewMode,
-    pageSize.width,
-    pageSize.height,
-  ]);
-
   return (
     <div className="app-container">
       <aside className="left-tabs-shell">
@@ -1805,15 +1705,46 @@ export default function App() {
           className={`secondary-view ${
             contentViewMode === "mainOnly" ? "hidden-pane" : ""
           } ${contentViewMode === "secondaryOnly" ? "full-pane" : ""}`}
-          ref={secondaryViewRef}
           style={
             contentViewMode === "both" ? { width: secondaryWidth } : undefined
           }
         >
           {!selectedShape && <div className="secondary-empty">No Selected</div>}
 
-          <div className="region-preview-container">
-            <canvas ref={regionCanvasRef} className="region-canvas" />
+          <div className="secondary-view-stack">
+            <PdfRegionPreview
+              pdfDoc={pdfDocState}
+              selectedRectangle={selectedRectangle}
+              selectedShape={selectedShape}
+              isDrawingShape={isDrawingShape}
+              pageSize={pageSize}
+              secondaryWidth={secondaryWidth}
+              contentViewMode={contentViewMode}
+            />
+          </div>
+
+          <div className="secondary-pdf-tab-list" role="tablist">
+            {pdfTabs.length === 0 && (
+              <div className="secondary-pdf-tab-empty">No PDF open</div>
+            )}
+            {pdfTabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                className={`secondary-pdf-tab ${
+                  tab.id === activePdfTabId ? "active" : ""
+                }`}
+                title={tab.pdfName || tab.pdfPath}
+                aria-selected={tab.id === activePdfTabId}
+                tabIndex={-1}
+                onClick={() => handleActivatePdfTab(tab.id)}
+              >
+                <span className="secondary-pdf-tab-title">
+                  {getPdfTabTitle(tab)}
+                </span>
+              </button>
+            ))}
           </div>
         </section>
       </main>
