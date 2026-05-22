@@ -20,24 +20,11 @@ import {
 import {
   findInnermostRectangles,
   formatNumber,
-  getDistance,
-  getDraggedLine,
-  getDraggedRect,
-  getLineDraftFromDrag,
   getLineDragHotZone,
-  getLineLength,
-  getLineMidpoint,
-  getLineResizeHandleHitZones,
   getLineResizeHandles,
   getRandomColor,
   getRectDragHotZone,
-  getRectResizeHandleHitZones,
   getRectResizeHandles,
-  isPointInsideBox,
-  isPointNearLine,
-  isPointOnLeftBorder,
-  normalizeLine,
-  normalizeRect,
   toPdfCoordinates,
   toPdfLineCoordinates,
 } from "./pdfWorkspaceGeometry";
@@ -82,14 +69,10 @@ export default function App() {
   const [scale, setScale] = useState(1);
   const [autoScaleDone, setAutoScaleDone] = useState(false);
 
-  const mainViewRef = useRef(null);
-  const mainViewInnerRef = useRef(null);
+  const pdfMainViewRef = useRef(null);
   const secondaryViewRef = useRef(null);
   const regionCanvasRef = useRef(null);
-  const konvaStageRef = useRef(null);
   const pdfDocRef = useRef(null);
-  const drawStartRef = useRef(null);
-  const dragShapeRef = useRef(null);
   const pendingZoomCenterRef = useRef(null);
   const middlePanRef = useRef(null);
   const questionSegmentIdRef = useRef(null);
@@ -148,6 +131,19 @@ export default function App() {
   function getPdfDataByteLength(pdfData) {
     return pdfData?.byteLength || pdfData?.length || 0;
   }
+
+  function getActiveMainView() {
+    return pdfMainViewRef.current?.getMainView() || null;
+  }
+
+  function getActiveMainViewInner() {
+    return pdfMainViewRef.current?.getMainViewInner() || null;
+  }
+
+  function clearActiveMainViewInteraction() {
+    pdfMainViewRef.current?.clearInteraction?.();
+  }
+
   function createPdfTabId(pdfPathValue) {
     return `${pdfPathValue || "pdf"}-${Date.now()}`;
   }
@@ -305,8 +301,6 @@ export default function App() {
     setQuestionItems(tab?.questionItems || []);
     setHasUnsavedChanges(Boolean(tab?.hasUnsavedChanges));
     setSaveStatus(tab?.saveStatus || "");
-    drawStartRef.current = null;
-    dragShapeRef.current = null;
 
     window.setTimeout(() => {
       isHydratingPdfTabRef.current = false;
@@ -400,7 +394,7 @@ export default function App() {
   }, [pdfObjectUrl]);
 
   function calculateFitScale(pdfWidth, pdfHeight) {
-    const mainView = mainViewRef.current;
+    const mainView = getActiveMainView();
 
     if (!mainView) {
       console.warn("[scale] mainViewRef is not ready.");
@@ -799,8 +793,8 @@ export default function App() {
   }
 
   function getMainViewPdfCenter(scaleValue) {
-    const mainView = mainViewRef.current;
-    const mainViewInner = mainViewInnerRef.current;
+    const mainView = getActiveMainView();
+    const mainViewInner = getActiveMainViewInner();
 
     if (
       !mainView ||
@@ -858,6 +852,7 @@ export default function App() {
   }
 
   function resetPageInteractionState() {
+    clearActiveMainViewInteraction();
     setCurrentRect(null);
     setCurrentLine(null);
     setIsDrawingShape(false);
@@ -866,8 +861,6 @@ export default function App() {
     setSelectedRectId(null);
     setSelectedLineId(null);
     setPropertyEditorShape(null);
-    drawStartRef.current = null;
-    dragShapeRef.current = null;
   }
 
   function goToPage(pageNumber) {
@@ -907,13 +900,14 @@ export default function App() {
   }
 
   function handleMainViewMouseDown(e) {
-    if (e.button !== 1 || !mainViewRef.current) return;
+    const mainView = getActiveMainView();
+    if (e.button !== 1 || !mainView) return;
 
     middlePanRef.current = {
       startX: e.clientX,
       startY: e.clientY,
-      scrollLeft: mainViewRef.current.scrollLeft,
-      scrollTop: mainViewRef.current.scrollTop,
+      scrollLeft: mainView.scrollLeft,
+      scrollTop: mainView.scrollTop,
     };
     setIsMiddlePanning(true);
     e.preventDefault();
@@ -921,7 +915,7 @@ export default function App() {
 
   function handleMainViewMouseMove(e) {
     const panState = middlePanRef.current;
-    const mainView = mainViewRef.current;
+    const mainView = getActiveMainView();
 
     if (!panState || !mainView) return;
 
@@ -1001,427 +995,6 @@ export default function App() {
     });
   }
 
-  function handleStageContextMenu(e) {
-    e.evt.preventDefault();
-  }
-
-  function handleStageDoubleClick(e) {
-    const stage = konvaStageRef.current;
-    if (!stage) return;
-
-    const pos = stage.getPointerPosition();
-    if (!pos) return;
-
-    const pagePoint = {
-      x: pos.x / scale,
-      y: pos.y / scale,
-    };
-
-    if (!isPointInSelectedEditHotZone(pagePoint)) return;
-
-    e.evt.preventDefault();
-    setPropertyEditorShape({ ...selectedShape });
-  }
-
-  function handleStageMouseDown(e) {
-    const stage = konvaStageRef.current;
-    if (!stage) return;
-
-    const pos = stage.getPointerPosition();
-    if (!pos) return;
-    e.evt.preventDefault();
-
-    const button = e.evt.button;
-
-    const pagePoint = {
-      x: pos.x / scale,
-      y: pos.y / scale,
-    };
-
-    if (button === 0) {
-      const dragTarget = findSelectedDragHotZone(pagePoint);
-
-      if (dragTarget) {
-        dragShapeRef.current = {
-          type: dragTarget.type,
-          id: dragTarget.shape.id,
-          action: dragTarget.action,
-          handle: dragTarget.handle,
-          startPoint: pagePoint,
-          originalShape: { ...dragTarget.shape },
-        };
-        drawStartRef.current = null;
-        setCurrentRect(null);
-        setCurrentLine(null);
-        setIsDrawingShape(false);
-        setIsDraggingShape(true);
-        return;
-      }
-
-      const hitRect = findLeftBorderHitRect(pagePoint);
-
-      if (hitRect) {
-        setSelectedShape({ type: hitRect.shapeType, id: hitRect.id });
-        setSelectedRectId(hitRect.id);
-        setCurrentRect(null);
-        setCurrentLine(null);
-        setIsDrawingShape(false);
-        setIsDraggingShape(false);
-        drawStartRef.current = null;
-        return;
-      }
-
-      const hitLine = findHitLine(pagePoint);
-
-      if (hitLine) {
-        setSelectedShape({ type: "line", id: hitLine.id });
-        setSelectedLineId(hitLine.id);
-        setCurrentRect(null);
-        setCurrentLine(null);
-        setIsDrawingShape(false);
-        setIsDraggingShape(false);
-        drawStartRef.current = null;
-        return;
-      }
-    }
-
-    if (button !== 0 && button !== 2) return;
-
-    drawStartRef.current = {
-      button,
-      x: pagePoint.x,
-      y: pagePoint.y,
-      lastPoint: pagePoint,
-      draftType: null,
-      draftShape: null,
-    };
-    setSelectedShape(null);
-    setCurrentRect(null);
-    setCurrentLine(null);
-    setIsDrawingShape(true);
-    setIsDraggingShape(false);
-  }
-
-  function handleStageMouseMove() {
-    const stage = konvaStageRef.current;
-    const dragState = dragShapeRef.current;
-    if (stage && dragState) {
-      const pos = stage.getPointerPosition();
-      if (!pos) return;
-
-      const pagePoint = {
-        x: pos.x / scale,
-        y: pos.y / scale,
-      };
-      const dx = pagePoint.x - dragState.startPoint.x;
-      const dy = pagePoint.y - dragState.startPoint.y;
-
-      moveDraggedShape(dragState, dx, dy);
-      return;
-    }
-
-    const start = drawStartRef.current;
-    if (!stage || !start) return;
-
-    const pos = stage.getPointerPosition();
-    if (!pos) return;
-
-    const pagePoint = {
-      x: pos.x / scale,
-      y: pos.y / scale,
-    };
-    start.lastPoint = pagePoint;
-
-    const lineDraft = getLineDraftFromDrag(start, pagePoint, scale);
-
-    if (lineDraft) {
-      start.draftType = "line";
-      start.draftShape = lineDraft;
-      setCurrentLine(lineDraft);
-      setCurrentRect(null);
-      return;
-    }
-
-    const nextRect = {
-      x: start.x,
-      y: start.y,
-      width: pagePoint.x - start.x,
-      height: pagePoint.y - start.y,
-    };
-
-    start.draftType = start.button === 2 ? "freeRect" : "rect";
-    start.draftShape = nextRect;
-    setCurrentRect(nextRect);
-    setCurrentLine(null);
-  }
-
-  function handleStageMouseUp() {
-    if (dragShapeRef.current) {
-      dragShapeRef.current = null;
-      setIsDraggingShape(false);
-      markWorkspaceDirty();
-      return;
-    }
-
-    const draft = drawStartRef.current;
-    const stage = konvaStageRef.current;
-    const pos = stage?.getPointerPosition();
-
-    if (!draft || !stage || !pos) {
-      drawStartRef.current = null;
-      setCurrentRect(null);
-      setCurrentLine(null);
-      setIsDrawingShape(false);
-      return;
-    }
-
-    const endPoint = {
-      x: pos.x / scale,
-      y: pos.y / scale,
-    };
-    const finalLine = getLineDraftFromDrag(draft, endPoint, scale);
-    const finalType = finalLine
-      ? "line"
-      : draft.button === 2
-        ? "freeRect"
-        : "rect";
-    const finalShape = finalLine || {
-      x: draft.x,
-      y: draft.y,
-      width: endPoint.x - draft.x,
-      height: endPoint.y - draft.y,
-    };
-
-    if (finalType === "line" && finalShape) {
-      const normalizedLine = normalizeLine(finalShape);
-
-      if (getLineLength(normalizedLine) > 3) {
-        const nextLine = {
-          ...normalizedLine,
-          id: Date.now(),
-          page: currentPage,
-          businessProps: getDefaultBusinessProps("line"),
-        };
-
-        setLines((oldLines) => [...oldLines, nextLine]);
-        setSelectedShape({ type: "line", id: nextLine.id });
-        setSelectedLineId(nextLine.id);
-        markWorkspaceDirty();
-      }
-
-      setCurrentLine(null);
-      setIsDrawingShape(false);
-      drawStartRef.current = null;
-      return;
-    }
-
-    const normalizedRect = normalizeRect(finalShape);
-
-    console.log("[rect] finish:", normalizedRect);
-
-    if (normalizedRect.width > 3 && normalizedRect.height > 3) {
-      const nextRect = {
-        ...normalizedRect,
-        id: Date.now(),
-        page: currentPage,
-        businessProps: getDefaultBusinessProps(finalType),
-      };
-
-      if (finalType === "freeRect") {
-        setFreeRectangles((oldRectangles) => [...oldRectangles, nextRect]);
-      } else {
-        setRectangles((oldRectangles) => [...oldRectangles, nextRect]);
-      }
-      setSelectedShape({ type: finalType, id: nextRect.id });
-      setSelectedRectId(nextRect.id);
-      markWorkspaceDirty();
-    }
-
-    setCurrentRect(null);
-    setIsDrawingShape(false);
-    drawStartRef.current = null;
-  }
-
-  function findLeftBorderHitRect(point) {
-    const manualRects = visibleRectangles.map((rect) => ({
-      ...rect,
-      shapeType: "rect",
-    }));
-    const freeRects = visibleFreeRectangles.map((rect) => ({
-      ...rect,
-      shapeType: "freeRect",
-    }));
-    const detectedRects = visibleDetectedRectangles.map((rect) => ({
-      ...rect,
-      shapeType: "detectedRect",
-    }));
-    const hitRects = [...manualRects, ...detectedRects, ...freeRects]
-      .reverse()
-      .filter((rect) => isPointOnLeftBorder(point, rect, scale));
-
-    if (hitRects.length === 0) return null;
-
-    return hitRects.reduce((bestRect, rect) => {
-      const bestDistance = Math.abs(
-        point.y - (bestRect.y + bestRect.height / 2),
-      );
-      const rectDistance = Math.abs(point.y - (rect.y + rect.height / 2));
-
-      return rectDistance < bestDistance ? rect : bestRect;
-    });
-  }
-
-  function findSelectedDragHotZone(point) {
-    if (!selectedShape || selectedShape.type === "detectedRect") return null;
-
-    if (selectedShape.type === "rect" || selectedShape.type === "freeRect") {
-      const rect =
-        selectedShape.type === "freeRect"
-          ? freeRectangles.find((item) => item.id === selectedShape.id)
-          : rectangles.find((item) => item.id === selectedShape.id);
-      if (!rect) return null;
-
-      const resizeHandle = findRectResizeHandle(point, rect);
-      if (resizeHandle) {
-        return {
-          type: selectedShape.type,
-          action: "resize",
-          handle: resizeHandle,
-          shape: rect,
-        };
-      }
-
-      if (!isPointInRectDragHotZone(point, rect)) return null;
-
-      return {
-        type: selectedShape.type,
-        action: "move",
-        handle: null,
-        shape: rect,
-      };
-    }
-
-    if (selectedShape.type === "line") {
-      const line = lines.find((item) => item.id === selectedShape.id);
-      if (!line) return null;
-
-      const resizeHandle = findLineResizeHandle(point, line);
-      if (resizeHandle) {
-        return {
-          type: "line",
-          action: "resize",
-          handle: resizeHandle,
-          shape: line,
-        };
-      }
-
-      if (!isPointNearLine(point, line, scale)) return null;
-
-      return {
-        type: "line",
-        action: "move",
-        handle: null,
-        shape: line,
-      };
-    }
-
-    return null;
-  }
-
-  function isPointInSelectedEditHotZone(point) {
-    if (!selectedShape) return false;
-
-    if (
-      selectedShape.type === "rect" ||
-      selectedShape.type === "freeRect" ||
-      selectedShape.type === "detectedRect"
-    ) {
-      const rect = getShapeByRef(selectedShape);
-      if (!rect) return false;
-
-      return (
-        isPointInRectDragHotZone(point, rect) ||
-        Boolean(findRectResizeHandle(point, rect)) ||
-        isPointOnLeftBorder(point, rect, scale)
-      );
-    }
-
-    if (selectedShape.type === "line") {
-      const line = getShapeByRef(selectedShape);
-      if (!line) return false;
-
-      return (
-        isPointNearLine(point, line, scale) ||
-        Boolean(findLineResizeHandle(point, line))
-      );
-    }
-
-    return false;
-  }
-
-  function isPointInRectDragHotZone(point, rect) {
-    const hotZone = getRectDragHotZone(rect, scale);
-
-    return isPointInsideBox(point, hotZone);
-  }
-
-  function findRectResizeHandle(point, rect) {
-    const handles = getRectResizeHandleHitZones(rect, scale);
-    const hitHandle = handles.find((handle) => isPointInsideBox(point, handle));
-
-    return hitHandle?.name || null;
-  }
-
-  function findLineResizeHandle(point, line) {
-    const handles = getLineResizeHandleHitZones(line, scale);
-    const hitHandle = handles.find((handle) => isPointInsideBox(point, handle));
-
-    return hitHandle?.name || null;
-  }
-
-  function moveDraggedShape(dragState, dx, dy) {
-    if (dragState.type === "rect") {
-      setRectangles((oldRectangles) =>
-        oldRectangles.map((rect) =>
-          rect.id === dragState.id ? getDraggedRect(dragState, dx, dy) : rect,
-        ),
-      );
-      return;
-    }
-
-    if (dragState.type === "freeRect") {
-      setFreeRectangles((oldRectangles) =>
-        oldRectangles.map((rect) =>
-          rect.id === dragState.id ? getDraggedRect(dragState, dx, dy) : rect,
-        ),
-      );
-      return;
-    }
-
-    if (dragState.type === "line") {
-      setLines((oldLines) =>
-        oldLines.map((line) =>
-          line.id === dragState.id ? getDraggedLine(dragState, dx, dy) : line,
-        ),
-      );
-    }
-  }
-
-  function findHitLine(point) {
-    const hitLines = [...visibleLines]
-      .reverse()
-      .filter((line) => isPointNearLine(point, line, scale));
-
-    if (hitLines.length === 0) return null;
-
-    return hitLines.reduce((bestLine, line) => {
-      const bestDistance = getDistance(point, getLineMidpoint(bestLine));
-      const lineDistance = getDistance(point, getLineMidpoint(line));
-
-      return lineDistance < bestDistance ? line : bestLine;
-    });
-  }
-
   function clearCurrentPageShapes() {
     if (!window.confirm("纭娓呯┖褰撳墠椤电殑鍥惧舰鍚楋紵")) return;
 
@@ -1441,7 +1014,6 @@ export default function App() {
     setCurrentLine(null);
     setIsDrawingShape(false);
     setIsDraggingShape(false);
-    dragShapeRef.current = null;
     setSelectedShape(null);
     setSelectedRectId(null);
     setSelectedLineId(null);
@@ -1672,13 +1244,12 @@ export default function App() {
   const propertyEditorBackground = propertyEditorShape
     ? getPropertyEditorBackground(propertyEditorShape.type)
     : undefined;
-  const isCurrentFreeRectDraft = drawStartRef.current?.button === 2;
   const noop = () => {};
 
   useLayoutEffect(() => {
     const zoomCenter = pendingZoomCenterRef.current;
-    const mainView = mainViewRef.current;
-    const mainViewInner = mainViewInnerRef.current;
+    const mainView = getActiveMainView();
+    const mainViewInner = getActiveMainViewInner();
 
     if (
       !zoomCenter ||
@@ -2120,10 +1691,9 @@ export default function App() {
                   className={`main-view-pane ${isActive ? "active" : ""}`}
                 >
                   <PdfMainView
+                    ref={isActive ? pdfMainViewRef : null}
                     contentViewMode={contentViewMode}
                     isMiddlePanning={isActive && isMiddlePanning}
-                    mainViewRef={isActive ? mainViewRef : null}
-                    mainViewInnerRef={isActive ? mainViewInnerRef : null}
                     memoFile={isActive ? memoFile : null}
                     displayPdf={isActive && displayPdf}
                     displayWidth={
@@ -2139,7 +1709,6 @@ export default function App() {
                     pageSize={isActive ? pageSize : tab.pageSize}
                     currentPage={isActive ? currentPage : tab.currentPage}
                     scale={isActive ? scale : tab.scale}
-                    konvaStageRef={isActive ? konvaStageRef : null}
                     isDraggingShape={isActive && isDraggingShape}
                     selectedShape={isActive ? selectedShape : tab.selectedShape}
                     visibleRectangles={isActive ? visibleRectangles : []}
@@ -2162,10 +1731,21 @@ export default function App() {
                     }
                     currentRect={isActive ? currentRect : null}
                     currentLine={isActive ? currentLine : null}
-                    isCurrentFreeRectDraft={
-                      isActive && isCurrentFreeRectDraft
-                    }
-                    normalizeRect={normalizeRect}
+                    rectangles={rectangles}
+                    lines={lines}
+                    freeRectangles={freeRectangles}
+                    setCurrentRect={setCurrentRect}
+                    setCurrentLine={setCurrentLine}
+                    setIsDrawingShape={setIsDrawingShape}
+                    setIsDraggingShape={setIsDraggingShape}
+                    setRectangles={setRectangles}
+                    setLines={setLines}
+                    setFreeRectangles={setFreeRectangles}
+                    setSelectedShape={setSelectedShape}
+                    setSelectedRectId={setSelectedRectId}
+                    setSelectedLineId={setSelectedLineId}
+                    setPropertyEditorShape={setPropertyEditorShape}
+                    markWorkspaceDirty={markWorkspaceDirty}
                     onMainViewMouseDown={
                       isActive ? handleMainViewMouseDown : noop
                     }
@@ -2184,15 +1764,6 @@ export default function App() {
                     }
                     onPageLoadSuccess={isActive ? handlePageLoadSuccess : noop}
                     onPageLoadError={isActive ? handlePageLoadError : noop}
-                    onStageMouseDown={isActive ? handleStageMouseDown : noop}
-                    onStageMouseMove={isActive ? handleStageMouseMove : noop}
-                    onStageMouseUp={isActive ? handleStageMouseUp : noop}
-                    onStageDoubleClick={
-                      isActive ? handleStageDoubleClick : noop
-                    }
-                    onStageContextMenu={
-                      isActive ? handleStageContextMenu : noop
-                    }
                   />
                 </div>
               );
