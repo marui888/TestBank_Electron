@@ -17,6 +17,30 @@ import {
   getShapeBusinessProps,
   updateShapeBusinessPropsInList,
 } from "./shapeProperties/shapePropertyUtils";
+import {
+  findInnermostRectangles,
+  formatNumber,
+  getDistance,
+  getDraggedLine,
+  getDraggedRect,
+  getLineDraftFromDrag,
+  getLineDragHotZone,
+  getLineLength,
+  getLineMidpoint,
+  getLineResizeHandleHitZones,
+  getLineResizeHandles,
+  getRandomColor,
+  getRectDragHotZone,
+  getRectResizeHandleHitZones,
+  getRectResizeHandles,
+  isPointInsideBox,
+  isPointNearLine,
+  isPointOnLeftBorder,
+  normalizeLine,
+  normalizeRect,
+  toPdfCoordinates,
+  toPdfLineCoordinates,
+} from "./pdfWorkspaceGeometry";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -313,6 +337,23 @@ export default function App() {
     if (!filePath) return null;
 
     return pdfTabsRef.current.find((tab) => tab.pdfPath === filePath) || null;
+  }
+
+  function getPdfTabTitle(tab) {
+    return tab?.pdfName || "Untitled PDF";
+  }
+
+  function handleActivatePdfTab(tabId) {
+    if (!tabId || tabId === activePdfTabId) return;
+
+    const nextTab = pdfTabsRef.current.find((tab) => tab.id === tabId);
+    if (!nextTab) return;
+
+    addDebugMessage("tab:activate", {
+      tabId,
+      name: nextTab.pdfName,
+    });
+    activatePdfTab(nextTab);
   }
 
   useEffect(() => {
@@ -1091,7 +1132,7 @@ export default function App() {
     };
     start.lastPoint = pagePoint;
 
-    const lineDraft = getLineDraftFromDrag(start, pagePoint);
+    const lineDraft = getLineDraftFromDrag(start, pagePoint, scale);
 
     if (lineDraft) {
       start.draftType = "line";
@@ -1138,7 +1179,7 @@ export default function App() {
       x: pos.x / scale,
       y: pos.y / scale,
     };
-    const finalLine = getLineDraftFromDrag(draft, endPoint);
+    const finalLine = getLineDraftFromDrag(draft, endPoint, scale);
     const finalType = finalLine
       ? "line"
       : draft.button === 2
@@ -1201,124 +1242,6 @@ export default function App() {
     drawStartRef.current = null;
   }
 
-  function normalizeRect(rect) {
-    const x1 = rect.x;
-    const y1 = rect.y;
-    const x2 = rect.x + rect.width;
-    const y2 = rect.y + rect.height;
-
-    return {
-      x: Math.min(x1, x2),
-      y: Math.min(y1, y2),
-      width: Math.abs(x2 - x1),
-      height: Math.abs(y2 - y1),
-    };
-  }
-
-  function getLineDraftFromDrag(start, point) {
-    const dx = point.x - start.x;
-    const dy = point.y - start.y;
-    const absDx = Math.abs(dx);
-    const absDy = Math.abs(dy);
-    const tolerance = 6 / scale;
-    const ratioThreshold = 8;
-
-    if (
-      start.button === 2 &&
-      absDx > tolerance &&
-      (absDy <= tolerance || absDx / Math.max(absDy, 1) >= ratioThreshold)
-    ) {
-      return {
-        orientation: "horizontal",
-        x1: start.x,
-        y1: start.y,
-        x2: point.x,
-        y2: start.y,
-      };
-    }
-
-    if (start.button === 2) {
-      return null;
-    }
-
-    if (
-      absDy > tolerance &&
-      (absDx <= tolerance || absDy / Math.max(absDx, 1) >= ratioThreshold)
-    ) {
-      return {
-        orientation: "vertical",
-        x1: start.x,
-        y1: start.y,
-        x2: start.x,
-        y2: point.y,
-      };
-    }
-
-    if (absDx > tolerance && absDx / Math.max(absDy, 1) >= ratioThreshold) {
-      return {
-        orientation: "horizontal",
-        x1: start.x,
-        y1: start.y,
-        x2: point.x,
-        y2: start.y,
-      };
-    }
-
-    return null;
-  }
-
-  function normalizeLine(line) {
-    if (line.orientation === "horizontal") {
-      return {
-        ...line,
-        x1: Math.min(line.x1, line.x2),
-        x2: Math.max(line.x1, line.x2),
-      };
-    }
-
-    return {
-      ...line,
-      y1: Math.min(line.y1, line.y2),
-      y2: Math.max(line.y1, line.y2),
-    };
-  }
-
-  function getLineLength(line) {
-    return Math.hypot(line.x2 - line.x1, line.y2 - line.y1);
-  }
-
-  function toPdfCoordinates(rect) {
-    return {
-      x: rect.x,
-      y: pageSize.height - rect.y - rect.height,
-      width: rect.width,
-      height: rect.height,
-    };
-  }
-
-  function toPdfLineCoordinates(line) {
-    return {
-      x1: line.x1,
-      y1: pageSize.height - line.y1,
-      x2: line.x2,
-      y2: pageSize.height - line.y2,
-    };
-  }
-
-  function formatNumber(value) {
-    return Number.isFinite(value) ? value.toFixed(2) : "0.00";
-  }
-
-  function isPointOnLeftBorder(point, rect) {
-    const tolerance = 6 / scale;
-    const withinX = Math.abs(point.x - rect.x) <= tolerance;
-    const withinY =
-      point.y >= rect.y - tolerance &&
-      point.y <= rect.y + rect.height + tolerance;
-
-    return withinX && withinY;
-  }
-
   function findLeftBorderHitRect(point) {
     const manualRects = visibleRectangles.map((rect) => ({
       ...rect,
@@ -1334,7 +1257,7 @@ export default function App() {
     }));
     const hitRects = [...manualRects, ...detectedRects, ...freeRects]
       .reverse()
-      .filter((rect) => isPointOnLeftBorder(point, rect));
+      .filter((rect) => isPointOnLeftBorder(point, rect, scale));
 
     if (hitRects.length === 0) return null;
 
@@ -1346,39 +1269,6 @@ export default function App() {
 
       return rectDistance < bestDistance ? rect : bestRect;
     });
-  }
-
-  function isPointNearLine(point, line) {
-    const tolerance = 6 / scale;
-
-    if (line.orientation === "horizontal") {
-      const minX = Math.min(line.x1, line.x2) - tolerance;
-      const maxX = Math.max(line.x1, line.x2) + tolerance;
-      return (
-        point.x >= minX &&
-        point.x <= maxX &&
-        Math.abs(point.y - line.y1) <= tolerance
-      );
-    }
-
-    const minY = Math.min(line.y1, line.y2) - tolerance;
-    const maxY = Math.max(line.y1, line.y2) + tolerance;
-    return (
-      point.y >= minY &&
-      point.y <= maxY &&
-      Math.abs(point.x - line.x1) <= tolerance
-    );
-  }
-
-  function getLineMidpoint(line) {
-    return {
-      x: (line.x1 + line.x2) / 2,
-      y: (line.y1 + line.y2) / 2,
-    };
-  }
-
-  function getDistance(pointA, pointB) {
-    return Math.hypot(pointA.x - pointB.x, pointA.y - pointB.y);
   }
 
   function findSelectedDragHotZone(point) {
@@ -1425,7 +1315,7 @@ export default function App() {
         };
       }
 
-      if (!isPointNearLine(point, line)) return null;
+      if (!isPointNearLine(point, line, scale)) return null;
 
       return {
         type: "line",
@@ -1452,7 +1342,7 @@ export default function App() {
       return (
         isPointInRectDragHotZone(point, rect) ||
         Boolean(findRectResizeHandle(point, rect)) ||
-        isPointOnLeftBorder(point, rect)
+        isPointOnLeftBorder(point, rect, scale)
       );
     }
 
@@ -1461,7 +1351,7 @@ export default function App() {
       if (!line) return false;
 
       return (
-        isPointNearLine(point, line) ||
+        isPointNearLine(point, line, scale) ||
         Boolean(findLineResizeHandle(point, line))
       );
     }
@@ -1470,139 +1360,23 @@ export default function App() {
   }
 
   function isPointInRectDragHotZone(point, rect) {
-    const hotZone = getRectDragHotZone(rect);
+    const hotZone = getRectDragHotZone(rect, scale);
 
     return isPointInsideBox(point, hotZone);
   }
 
   function findRectResizeHandle(point, rect) {
-    const handles = getRectResizeHandleHitZones(rect);
+    const handles = getRectResizeHandleHitZones(rect, scale);
     const hitHandle = handles.find((handle) => isPointInsideBox(point, handle));
 
     return hitHandle?.name || null;
   }
 
   function findLineResizeHandle(point, line) {
-    const handles = getLineResizeHandleHitZones(line);
+    const handles = getLineResizeHandleHitZones(line, scale);
     const hitHandle = handles.find((handle) => isPointInsideBox(point, handle));
 
     return hitHandle?.name || null;
-  }
-
-  function isPointInsideBox(point, box) {
-    return (
-      point.x >= box.x &&
-      point.x <= box.x + box.width &&
-      point.y >= box.y &&
-      point.y <= box.y + box.height
-    );
-  }
-
-  function getRectDragHotZone(rect) {
-    const tolerance = 8 / scale;
-
-    return {
-      x: rect.x - tolerance,
-      y: rect.y - tolerance,
-      width: tolerance * 2,
-      height: rect.height + tolerance * 2,
-    };
-  }
-
-  function getResizeHandleSize() {
-    return 8 / scale;
-  }
-
-  function getResizeHandleHitSize() {
-    return 20 / scale;
-  }
-
-  function getRectResizeHandles(rect) {
-    const size = getResizeHandleSize();
-
-    return getRectResizeHandleBoxes(rect, size);
-  }
-
-  function getRectResizeHandleHitZones(rect) {
-    const size = getResizeHandleHitSize();
-
-    return getRectResizeHandleBoxes(rect, size);
-  }
-
-  function getRectResizeHandleBoxes(rect, size) {
-    return [
-      {
-        name: "topRight",
-        x: rect.x + rect.width - size / 2,
-        y: rect.y - size / 2,
-        width: size,
-        height: size,
-      },
-      {
-        name: "bottomRight",
-        x: rect.x + rect.width - size / 2,
-        y: rect.y + rect.height - size / 2,
-        width: size,
-        height: size,
-      },
-    ];
-  }
-
-  function getLineDragHotZone(line) {
-    const tolerance = 8 / scale;
-
-    if (line.orientation === "horizontal") {
-      const x = Math.min(line.x1, line.x2);
-      const width = Math.abs(line.x2 - line.x1);
-
-      return {
-        x,
-        y: line.y1 - tolerance,
-        width,
-        height: tolerance * 2,
-      };
-    }
-
-    const y = Math.min(line.y1, line.y2);
-    const height = Math.abs(line.y2 - line.y1);
-
-    return {
-      x: line.x1 - tolerance,
-      y,
-      width: tolerance * 2,
-      height,
-    };
-  }
-
-  function getLineResizeHandles(line) {
-    const size = getResizeHandleSize();
-
-    return getLineResizeHandleBoxes(line, size);
-  }
-
-  function getLineResizeHandleHitZones(line) {
-    const size = getResizeHandleHitSize();
-
-    return getLineResizeHandleBoxes(line, size);
-  }
-
-  function getLineResizeHandleBoxes(line, size) {
-    return [
-      {
-        name: "start",
-        x: line.x1 - size / 2,
-        y: line.y1 - size / 2,
-        width: size,
-        height: size,
-      },
-      {
-        name: "end",
-        x: line.x2 - size / 2,
-        y: line.y2 - size / 2,
-        width: size,
-        height: size,
-      },
-    ];
   }
 
   function moveDraggedShape(dragState, dx, dy) {
@@ -1633,85 +1407,10 @@ export default function App() {
     }
   }
 
-  function getDraggedRect(dragState, dx, dy) {
-    const rect = dragState.originalShape;
-
-    if (dragState.action === "resize" && dragState.handle === "bottomRight") {
-      const minSize = 3;
-
-      return {
-        ...rect,
-        width: Math.max(minSize, rect.width + dx),
-        height: Math.max(minSize, rect.height + dy),
-      };
-    }
-
-    if (dragState.action === "resize" && dragState.handle === "topRight") {
-      const minSize = 3;
-      const bottom = rect.y + rect.height;
-      const nextTop = Math.min(bottom - minSize, rect.y + dy);
-
-      return {
-        ...rect,
-        y: nextTop,
-        width: Math.max(minSize, rect.width + dx),
-        height: bottom - nextTop,
-      };
-    }
-
-    return {
-      ...rect,
-      x: rect.x + dx,
-      y: rect.y + dy,
-    };
-  }
-
-  function getDraggedLine(dragState, dx, dy) {
-    const line = dragState.originalShape;
-
-    if (dragState.action === "resize") {
-      const minLength = 3;
-
-      if (line.orientation === "horizontal") {
-        if (dragState.handle === "start") {
-          return {
-            ...line,
-            x1: Math.min(line.x2 - minLength, line.x1 + dx),
-          };
-        }
-
-        return {
-          ...line,
-          x2: Math.max(line.x1 + minLength, line.x2 + dx),
-        };
-      }
-
-      if (dragState.handle === "start") {
-        return {
-          ...line,
-          y1: Math.min(line.y2 - minLength, line.y1 + dy),
-        };
-      }
-
-      return {
-        ...line,
-        y2: Math.max(line.y1 + minLength, line.y2 + dy),
-      };
-    }
-
-    return {
-      ...line,
-      x1: line.x1 + dx,
-      y1: line.y1 + dy,
-      x2: line.x2 + dx,
-      y2: line.y2 + dy,
-    };
-  }
-
   function findHitLine(point) {
     const hitLines = [...visibleLines]
       .reverse()
-      .filter((line) => isPointNearLine(point, line));
+      .filter((line) => isPointNearLine(point, line, scale));
 
     if (hitLines.length === 0) return null;
 
@@ -1815,129 +1514,6 @@ export default function App() {
       setSelectedRectId(null);
     }
     markWorkspaceDirty();
-  }
-
-  function findInnermostRectangles(sourceLines) {
-    const horizontals = [];
-    const verticals = [];
-    const epsilon = 0.001;
-
-    sourceLines.forEach((line) => {
-      if (line.orientation === "horizontal") {
-        horizontals.push({
-          y: line.y1,
-          x1: Math.min(line.x1, line.x2),
-          x2: Math.max(line.x1, line.x2),
-        });
-      }
-
-      if (line.orientation === "vertical") {
-        verticals.push({
-          x: line.x1,
-          y1: Math.min(line.y1, line.y2),
-          y2: Math.max(line.y1, line.y2),
-        });
-      }
-    });
-
-    const xCoords = [...new Set(verticals.map((line) => line.x))].sort(
-      (a, b) => a - b,
-    );
-    const yCoords = [...new Set(horizontals.map((line) => line.y))].sort(
-      (a, b) => a - b,
-    );
-    const candidateRects = [];
-
-    for (let leftIndex = 0; leftIndex < xCoords.length; leftIndex += 1) {
-      for (
-        let rightIndex = leftIndex + 1;
-        rightIndex < xCoords.length;
-        rightIndex += 1
-      ) {
-        const left = xCoords[leftIndex];
-        const right = xCoords[rightIndex];
-
-        for (let topIndex = 0; topIndex < yCoords.length; topIndex += 1) {
-          for (
-            let bottomIndex = topIndex + 1;
-            bottomIndex < yCoords.length;
-            bottomIndex += 1
-          ) {
-            const top = yCoords[topIndex];
-            const bottom = yCoords[bottomIndex];
-
-            const hasLeft = verticals.some(
-              (line) =>
-                Math.abs(line.x - left) < epsilon &&
-                line.y1 <= top + epsilon &&
-                line.y2 >= bottom - epsilon,
-            );
-            const hasRight = verticals.some(
-              (line) =>
-                Math.abs(line.x - right) < epsilon &&
-                line.y1 <= top + epsilon &&
-                line.y2 >= bottom - epsilon,
-            );
-            const hasTop = horizontals.some(
-              (line) =>
-                Math.abs(line.y - top) < epsilon &&
-                line.x1 <= left + epsilon &&
-                line.x2 >= right - epsilon,
-            );
-            const hasBottom = horizontals.some(
-              (line) =>
-                Math.abs(line.y - bottom) < epsilon &&
-                line.x1 <= left + epsilon &&
-                line.x2 >= right - epsilon,
-            );
-
-            if (hasLeft && hasRight && hasTop && hasBottom) {
-              candidateRects.push({
-                x: left,
-                y: top,
-                width: right - left,
-                height: bottom - top,
-              });
-            }
-          }
-        }
-      }
-    }
-
-    return candidateRects.filter(
-      (rect, index) =>
-        !candidateRects.some(
-          (otherRect, otherIndex) =>
-            otherIndex !== index && isRectInside(otherRect, rect),
-        ),
-    );
-  }
-
-  function isRectInside(innerRect, outerRect) {
-    const epsilon = 0.001;
-
-    return (
-      innerRect.x >= outerRect.x - epsilon &&
-      innerRect.y >= outerRect.y - epsilon &&
-      innerRect.x + innerRect.width <=
-        outerRect.x + outerRect.width + epsilon &&
-      innerRect.y + innerRect.height <=
-        outerRect.y + outerRect.height + epsilon &&
-      (innerRect.x > outerRect.x + epsilon ||
-        innerRect.y > outerRect.y + epsilon ||
-        innerRect.x + innerRect.width <
-          outerRect.x + outerRect.width - epsilon ||
-        innerRect.y + innerRect.height <
-          outerRect.y + outerRect.height - epsilon)
-    );
-  }
-
-  function getRandomColor() {
-    const r = Math.floor(Math.random() * 256);
-    const g = Math.floor(Math.random() * 256);
-    const b = Math.floor(Math.random() * 256);
-
-    return `rgba(${r}, ${g}, ${b}, 0.2)`;
   }
 
   function getShapeByRef(shapeRef) {
@@ -2056,22 +1632,22 @@ export default function App() {
       ? lines.find((line) => line.id === selectedShape.id) || null
       : null;
   const selectedRectDragHotZone = selectedManualRectForDrag
-    ? getRectDragHotZone(selectedManualRectForDrag)
+    ? getRectDragHotZone(selectedManualRectForDrag, scale)
     : null;
   const selectedRectResizeHandles = selectedManualRectForDrag
-    ? getRectResizeHandles(selectedManualRectForDrag)
+    ? getRectResizeHandles(selectedManualRectForDrag, scale)
     : [];
   const selectedLineDragHotZone = selectedLineForDrag
-    ? getLineDragHotZone(selectedLineForDrag)
+    ? getLineDragHotZone(selectedLineForDrag, scale)
     : null;
   const selectedLineResizeHandles = selectedLineForDrag
-    ? getLineResizeHandles(selectedLineForDrag)
+    ? getLineResizeHandles(selectedLineForDrag, scale)
     : [];
   const selectedPdfRect = selectedRectangleForInfo
-    ? toPdfCoordinates(selectedRectangleForInfo)
+    ? toPdfCoordinates(selectedRectangleForInfo, pageSize.height)
     : null;
   const selectedPdfLine = selectedLineForInfo
-    ? toPdfLineCoordinates(selectedLineForInfo)
+    ? toPdfLineCoordinates(selectedLineForInfo, pageSize.height)
     : null;
   const displayWidth = pageSize.width * scale;
   const displayHeight = pageSize.height * scale;
@@ -2097,6 +1673,7 @@ export default function App() {
     ? getPropertyEditorBackground(propertyEditorShape.type)
     : undefined;
   const isCurrentFreeRectDraft = drawStartRef.current?.button === 2;
+  const noop = () => {};
 
   useLayoutEffect(() => {
     const zoomCenter = pendingZoomCenterRef.current;
@@ -2525,47 +2102,129 @@ export default function App() {
       </aside>
 
       <main className="content-area">
-        <PdfMainView
-          contentViewMode={contentViewMode}
-          isMiddlePanning={isMiddlePanning}
-          mainViewRef={mainViewRef}
-          mainViewInnerRef={mainViewInnerRef}
-          memoFile={memoFile}
-          displayPdf={displayPdf}
-          displayWidth={displayWidth}
-          displayHeight={displayHeight}
-          pageSize={pageSize}
-          currentPage={currentPage}
-          scale={scale}
-          konvaStageRef={konvaStageRef}
-          isDraggingShape={isDraggingShape}
-          selectedShape={selectedShape}
-          visibleRectangles={visibleRectangles}
-          visibleLines={visibleLines}
-          visibleDetectedRectangles={visibleDetectedRectangles}
-          visibleFreeRectangles={visibleFreeRectangles}
-          selectedRectDragHotZone={selectedRectDragHotZone}
-          selectedLineDragHotZone={selectedLineDragHotZone}
-          selectedRectResizeHandles={selectedRectResizeHandles}
-          selectedLineResizeHandles={selectedLineResizeHandles}
-          currentRect={currentRect}
-          currentLine={currentLine}
-          isCurrentFreeRectDraft={isCurrentFreeRectDraft}
-          normalizeRect={normalizeRect}
-          onMainViewMouseDown={handleMainViewMouseDown}
-          onMainViewMouseMove={handleMainViewMouseMove}
-          onStopMiddlePan={stopMiddlePan}
-          onDocumentLoadSuccess={handleDocumentLoadSuccess}
-          onDocumentLoadError={handleDocumentLoadError}
-          onDocumentSourceError={handleDocumentSourceError}
-          onPageLoadSuccess={handlePageLoadSuccess}
-          onPageLoadError={handlePageLoadError}
-          onStageMouseDown={handleStageMouseDown}
-          onStageMouseMove={handleStageMouseMove}
-          onStageMouseUp={handleStageMouseUp}
-          onStageDoubleClick={handleStageDoubleClick}
-          onStageContextMenu={handleStageContextMenu}
-        />
+        <div
+          className={`main-view-shell ${
+            contentViewMode === "secondaryOnly" ? "hidden-pane" : ""
+          }`}
+        >
+          <div className="main-view-stack">
+            {pdfTabs.length === 0 && (
+              <div className="main-view-empty">Open a PDF to begin</div>
+            )}
+            {pdfTabs.map((tab) => {
+              const isActive = tab.id === activePdfTabId;
+
+              return (
+                <div
+                  key={tab.id}
+                  className={`main-view-pane ${isActive ? "active" : ""}`}
+                >
+                  <PdfMainView
+                    contentViewMode={contentViewMode}
+                    isMiddlePanning={isActive && isMiddlePanning}
+                    mainViewRef={isActive ? mainViewRef : null}
+                    mainViewInnerRef={isActive ? mainViewInnerRef : null}
+                    memoFile={isActive ? memoFile : null}
+                    displayPdf={isActive && displayPdf}
+                    displayWidth={
+                      isActive
+                        ? displayWidth
+                        : (tab.pageSize?.width || 0) * (tab.scale || 1)
+                    }
+                    displayHeight={
+                      isActive
+                        ? displayHeight
+                        : (tab.pageSize?.height || 0) * (tab.scale || 1)
+                    }
+                    pageSize={isActive ? pageSize : tab.pageSize}
+                    currentPage={isActive ? currentPage : tab.currentPage}
+                    scale={isActive ? scale : tab.scale}
+                    konvaStageRef={isActive ? konvaStageRef : null}
+                    isDraggingShape={isActive && isDraggingShape}
+                    selectedShape={isActive ? selectedShape : tab.selectedShape}
+                    visibleRectangles={isActive ? visibleRectangles : []}
+                    visibleLines={isActive ? visibleLines : []}
+                    visibleDetectedRectangles={
+                      isActive ? visibleDetectedRectangles : []
+                    }
+                    visibleFreeRectangles={isActive ? visibleFreeRectangles : []}
+                    selectedRectDragHotZone={
+                      isActive ? selectedRectDragHotZone : null
+                    }
+                    selectedLineDragHotZone={
+                      isActive ? selectedLineDragHotZone : null
+                    }
+                    selectedRectResizeHandles={
+                      isActive ? selectedRectResizeHandles : []
+                    }
+                    selectedLineResizeHandles={
+                      isActive ? selectedLineResizeHandles : []
+                    }
+                    currentRect={isActive ? currentRect : null}
+                    currentLine={isActive ? currentLine : null}
+                    isCurrentFreeRectDraft={
+                      isActive && isCurrentFreeRectDraft
+                    }
+                    normalizeRect={normalizeRect}
+                    onMainViewMouseDown={
+                      isActive ? handleMainViewMouseDown : noop
+                    }
+                    onMainViewMouseMove={
+                      isActive ? handleMainViewMouseMove : noop
+                    }
+                    onStopMiddlePan={isActive ? stopMiddlePan : noop}
+                    onDocumentLoadSuccess={
+                      isActive ? handleDocumentLoadSuccess : noop
+                    }
+                    onDocumentLoadError={
+                      isActive ? handleDocumentLoadError : noop
+                    }
+                    onDocumentSourceError={
+                      isActive ? handleDocumentSourceError : noop
+                    }
+                    onPageLoadSuccess={isActive ? handlePageLoadSuccess : noop}
+                    onPageLoadError={isActive ? handlePageLoadError : noop}
+                    onStageMouseDown={isActive ? handleStageMouseDown : noop}
+                    onStageMouseMove={isActive ? handleStageMouseMove : noop}
+                    onStageMouseUp={isActive ? handleStageMouseUp : noop}
+                    onStageDoubleClick={
+                      isActive ? handleStageDoubleClick : noop
+                    }
+                    onStageContextMenu={
+                      isActive ? handleStageContextMenu : noop
+                    }
+                  />
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="main-pdf-tab-list" role="tablist">
+            {pdfTabs.length === 0 && (
+              <div className="main-pdf-tab-empty">No PDF open</div>
+            )}
+            {pdfTabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                className={`main-pdf-tab ${
+                  tab.id === activePdfTabId ? "active" : ""
+                }`}
+                title={tab.pdfName || tab.pdfPath}
+                aria-selected={tab.id === activePdfTabId}
+                onClick={() => handleActivatePdfTab(tab.id)}
+              >
+                {tab.hasUnsavedChanges && (
+                  <span className="main-pdf-tab-dirty" aria-hidden="true" />
+                )}
+                <span className="main-pdf-tab-title">
+                  {getPdfTabTitle(tab)}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
 
         {contentViewMode === "both" && (
           <div className="splitter" onMouseDown={handleSplitterMouseDown} />
