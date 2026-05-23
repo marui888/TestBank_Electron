@@ -310,16 +310,37 @@ body,
   min-height: 0;
 }
 
+.question-number-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.question-number-header .sidebar-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.question-range-select {
+  flex: 0 0 74px;
+  min-width: 0;
+  height: 22px;
+  font-size: 11px;
+}
+
 .question-segment-meta {
-  font-size: 12px;
-  line-height: 1.35;
+  font-size: 11px;
+  line-height: 1.25;
   color: #333;
+  margin-bottom: 4px;
 }
 
 .question-number-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   flex: 1;
   min-height: 0;
   overflow: auto;
@@ -327,20 +348,17 @@ body,
 
 .question-number-item {
   border: 1px solid #d0d0d0;
-  border-radius: 4px;
+  border-radius: 3px;
   background: #fff;
-  padding: 5px;
-  font-size: 12px;
-  line-height: 1.25;
-}
-
-.question-number-id {
+  padding: 2px 4px;
+  font-size: 11px;
+  line-height: 1.15;
   font-weight: 700;
   color: #1f5d8f;
 }
 
-.question-number-name {
-  color: #333;
+.question-number-item:nth-child(even) {
+  background: #f3f7fb;
 }
 
 .content-area {
@@ -507,7 +525,7 @@ body,
   display: flex;
   flex-direction: column;
   position: relative;
-  padding: 12px;
+  padding: 0;
   box-sizing: border-box;
 }
 
@@ -525,6 +543,8 @@ body,
   min-height: 0;
   display: flex;
   overflow: hidden;
+  padding: 4px;
+  box-sizing: border-box;
 }
 
 .region-preview-container {
@@ -548,16 +568,18 @@ body,
 }
 
 .secondary-pdf-tab-list {
-  flex: 0 0 30px;
+  flex: 0 0 32px;
   display: flex;
   align-items: stretch;
   gap: 1px;
   min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  margin-top: 8px;
+  margin-top: 0;
+  padding: 0 0px;
   border-top: 1px solid #bbb;
   background: #d4d4d4;
+  box-sizing: border-box;
 }
 
 .secondary-pdf-tab-empty {
@@ -569,14 +591,14 @@ body,
 }
 
 .secondary-pdf-tab {
-  flex: 0 1 150px;
-  min-width: 72px;
-  max-width: 190px;
+  flex: 0 1 180px;
+  min-width: 88px;
+  max-width: 220px;
   display: flex;
   align-items: center;
   border: 0;
   border-right: 1px solid #aaa;
-  padding: 0 8px;
+  padding: 0 10px;
   background: #e5e5e5;
   color: #333;
   font-size: 12px;

@@ -1,46 +1,3 @@
-function parseAttributes(rawText = "") {
-  const text = rawText.trim();
-
-  if (/^\d+$/.test(text)) {
-    return {
-      total: Number(text),
-      startIndex: 1,
-    };
-  }
-
-  const attributes = {};
-  const normalizedText = text.replaceAll("；", ";").replaceAll("：", ":");
-
-  normalizedText
-    .split(";")
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .forEach((part) => {
-      const separatorIndex = part.indexOf(":");
-      if (separatorIndex === -1) return;
-
-      const key = part.slice(0, separatorIndex).trim();
-      const rawValue = part.slice(separatorIndex + 1).trim();
-      const unquotedValue = rawValue.replace(/^["']|["']$/g, "");
-      const numericValue = Number(unquotedValue);
-
-      attributes[key] = Number.isFinite(numericValue)
-        ? numericValue
-        : unquotedValue;
-    });
-
-  if (attributes.total && !attributes.startIndex) {
-    attributes.startIndex = 1;
-  }
-
-  return attributes;
-}
-
-function getCodeBlockText(markdownText) {
-  const match = markdownText.match(/```([\s\S]*?)```/);
-  return match ? match[1] : "";
-}
-
 function getNodePath(node) {
   const path = [];
   let current = node;
@@ -54,7 +11,10 @@ function getNodePath(node) {
 }
 
 function flattenNodes(nodes) {
-  return nodes.flatMap((node) => [node, ...flattenNodes(node.children)]);
+  return (Array.isArray(nodes) ? nodes : []).flatMap((node) => [
+    node,
+    ...flattenNodes(node.children),
+  ]);
 }
 
 function getSegmentName(path, segmentNames) {
@@ -67,53 +27,44 @@ function getQuestionName(path, questionIndex, segmentNames) {
   return `${getSegmentName(path, segmentNames)}第${questionIndex}题`;
 }
 
-export function parseSourceMetadata(markdownText) {
-  const nameMatch = markdownText.match(
-    /^##\s*name:\s*([^;]+);\s*type:\s*["']?([^"'\n]+)["']?/m,
-  );
-  const pageGapMatch = markdownText.match(/^###\s*pageGap:\s*(\d+)/m);
-  const segmentNamesMatch = markdownText.match(
-    /^###\s*segmentNames:\s*([^\n]+)/m,
-  );
-  const segmentNames = segmentNamesMatch
-    ? segmentNamesMatch[1].trim().split(":").map((name) => name.trim())
-    : [];
-  const roots = [];
-  const stack = [];
-  const codeBlockText = getCodeBlockText(markdownText);
+function getOptionalNumber(value) {
+  const numberValue = Number(value);
 
-  codeBlockText.split(/\r?\n/).forEach((line) => {
-    const match = line.match(/^\s*(#+)\s+(\d+)\s*(?:\{([^}]*)\})?/);
-    if (!match) return;
+  return Number.isFinite(numberValue) ? numberValue : undefined;
+}
 
-    const level = match[1].length;
-    const node = {
-      level,
-      index: Number(match[2]),
-      children: [],
-      parent: null,
-      ...parseAttributes(match[3] || ""),
-    };
+function normalizeMetadataNode(node, level, parent) {
+  const normalizedNode = {
+    ...node,
+    level,
+    index: Number(node.index),
+    startPage: getOptionalNumber(node.startPage),
+    total: getOptionalNumber(node.total),
+    startQuestionID: getOptionalNumber(node.startQuestionID),
+    children: [],
+    parent,
+  };
 
-    stack.length = level - 1;
+  normalizedNode.children = (Array.isArray(node.children) ? node.children : [])
+    .map((child) => normalizeMetadataNode(child, level + 1, normalizedNode));
 
-    const parent = stack[level - 2] || null;
-    if (parent) {
-      node.parent = parent;
-      parent.children.push(node);
-    } else {
-      roots.push(node);
-    }
+  return normalizedNode;
+}
 
-    stack[level - 1] = node;
-  });
+export function parseSourceMetadataJson(rawText) {
+  const metadata = typeof rawText === "string" ? JSON.parse(rawText) : rawText;
 
   return {
-    name: nameMatch?.[1]?.trim() || "",
-    type: nameMatch?.[2]?.trim() || "",
-    pageGap: pageGapMatch ? Number(pageGapMatch[1]) : 0,
-    segmentNames,
-    roots,
+    schemaVersion: metadata.schemaVersion || 1,
+    name: metadata.name || "",
+    type: metadata.type || "",
+    pageGap: Number(metadata.pageGap || 0),
+    segmentNames: Array.isArray(metadata.segmentNames)
+      ? metadata.segmentNames
+      : [],
+    roots: (Array.isArray(metadata.roots) ? metadata.roots : []).map((node) =>
+      normalizeMetadataNode(node, 1, null),
+    ),
   };
 }
 
@@ -122,6 +73,8 @@ export function getSourcePageFromPdfPage(pdfPage, pageGap) {
 }
 
 export function getSecondLastSegments(metadata) {
+  if (!metadata) return [];
+
   const secondLastLevel = metadata.segmentNames.length - 1;
   const segments = flattenNodes(metadata.roots).filter(
     (node) => node.level === secondLastLevel && Number.isFinite(node.startPage),
@@ -145,15 +98,48 @@ export function getSecondLastSegments(metadata) {
 }
 
 export function getSecondLastSegmentForPage(metadata, sourcePage) {
-  const segments = getSecondLastSegments(metadata);
+  return getSecondLastSegmentGroupForPage(metadata, sourcePage).currentSegment;
+}
 
-  return (
-    segments.find(
-      (segment) =>
-        sourcePage >= segment.startPage &&
-        (segment.endPage === null || sourcePage <= segment.endPage),
-    ) || null
+export function getSecondLastSegmentGroupForPage(
+  metadata,
+  sourcePage,
+  rangeMode = "default",
+) {
+  const segments = getSecondLastSegments(metadata);
+  const currentIndex = segments.findIndex(
+    (segment) =>
+      sourcePage >= segment.startPage &&
+      (segment.endPage === null || sourcePage <= segment.endPage),
   );
+
+  if (currentIndex === -1) {
+    return {
+      currentSegment: null,
+      segments: [],
+    };
+  }
+
+  const currentSegment = segments[currentIndex];
+
+  if (rangeMode === "prev") {
+    return {
+      currentSegment,
+      segments: [segments[currentIndex - 1], currentSegment].filter(Boolean),
+    };
+  }
+
+  if (rangeMode === "next") {
+    return {
+      currentSegment,
+      segments: [currentSegment, segments[currentIndex + 1]].filter(Boolean),
+    };
+  }
+
+  return {
+    currentSegment,
+    segments: [currentSegment],
+  };
 }
 
 export function getQuestionItemsForSecondLastSegment(segmentInfo, metadata) {
@@ -161,13 +147,13 @@ export function getQuestionItemsForSecondLastSegment(segmentInfo, metadata) {
 
   return segmentInfo.node.children.flatMap((child) => {
     const total = Number(child.total);
-    const startIndex = Number(child.startIndex || 1);
+    const startQuestionID = Number(child.startQuestionID || 1);
     const path = getNodePath(child);
 
     if (!Number.isInteger(total) || total <= 0) return [];
 
     return Array.from({ length: total }, (_, itemIndex) => {
-      const questionIndex = startIndex + itemIndex;
+      const questionIndex = startQuestionID + itemIndex;
       const id = [...path, questionIndex].join(".");
 
       return {
@@ -178,13 +164,33 @@ export function getQuestionItemsForSecondLastSegment(segmentInfo, metadata) {
   });
 }
 
-export function getQuestionListForPdfPage(metadata, pdfPage) {
+export function getQuestionListForPdfPage(
+  metadata,
+  pdfPage,
+  rangeMode = "default",
+) {
+  if (!metadata) {
+    return {
+      sourcePage: pdfPage,
+      segment: null,
+      segments: [],
+      questions: [],
+    };
+  }
+
   const sourcePage = getSourcePageFromPdfPage(pdfPage, metadata.pageGap);
-  const segment = getSecondLastSegmentForPage(metadata, sourcePage);
+  const segmentGroup = getSecondLastSegmentGroupForPage(
+    metadata,
+    sourcePage,
+    rangeMode,
+  );
 
   return {
     sourcePage,
-    segment,
-    questions: getQuestionItemsForSecondLastSegment(segment, metadata),
+    segment: segmentGroup.currentSegment,
+    segments: segmentGroup.segments,
+    questions: segmentGroup.segments.flatMap((segment) =>
+      getQuestionItemsForSecondLastSegment(segment, metadata),
+    ),
   };
 }

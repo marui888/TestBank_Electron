@@ -1,0 +1,218 @@
+{
+  "schemaVersion": 1,
+  "name": "53高中数学人教A版必修2全练版",
+  "type": "book",
+  "pageGap": 3,
+  "segmentNames": ["章", "节", "小节"],
+  "roots": [
+    {
+      "index": 6,
+      "title": "平面向量及其应用",
+      "startPage": 1,
+      "children": [
+        {
+          "index": 1,
+          "title": "平面向量的概念",
+          "startPage": 1,
+          "children": [
+            { "index": 1, "title": "向量的实际背景与概念", "total": 6, "startQuestionID": 1 },
+            { "index": 2, "title": "向量的几何表示", "total": 7, "startQuestionID": 1 },
+            { "index": 3, "title": "相等向量与共线向量", "total": 6, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 2,
+          "title": "平面向量的运算",
+          "startPage": 3,
+          "children": [
+            { "index": 1, "title": "向量的加法运算", "total": 8, "startQuestionID": 1 },
+            { "index": 2, "title": "向量的减法运算", "total": 7, "startQuestionID": 1 },
+            { "index": 3, "title": "向量的数乘运算", "total": 9, "startQuestionID": 1 },
+            { "index": 4, "title": "向量的数量积", "total": 10, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 3,
+          "title": "平面向量基本定理及坐标表示",
+          "startPage": 13,
+          "children": [
+            { "index": 1, "title": "平面向量基本定理", "total": 8, "startQuestionID": 1 },
+            { "index": 2, "title": "平面向量的正交分解及坐标表示", "total": 9, "startQuestionID": 1 },
+            { "index": 3, "title": "平面向量加、减运算的坐标表示", "total": 8, "startQuestionID": 1 },
+            { "index": 4, "title": "平面向量数乘运算的坐标表示", "total": 7, "startQuestionID": 1 },
+            { "index": 5, "title": "平面向量数量积的坐标表示", "total": 8, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 4,
+          "title": "平面向量的应用",
+          "startPage": 23,
+          "children": [
+            { "index": 1, "title": "平面几何中的向量方法", "total": 8, "startQuestionID": 1 },
+            { "index": 2, "title": "向量在物理中的应用举例", "total": 7, "startQuestionID": 1 },
+            { "index": 3, "title": "余弦定理、正弦定理", "total": 10, "startQuestionID": 1 }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 7,
+      "title": "复数",
+      "startPage": 41,
+      "children": [
+        {
+          "index": 1,
+          "title": "复数的概念",
+          "startPage": 41,
+          "children": [
+            { "index": 1, "title": "数系的扩充和复数的概念", "total": 8, "startQuestionID": 1 },
+            { "index": 2, "title": "复数的几何意义", "total": 7, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 2,
+          "title": "复数的四则运算",
+          "startPage": 44,
+          "children": [
+            { "index": 1, "title": "复数的加、减运算及其几何意义", "total": 8, "startQuestionID": 1 },
+            { "index": 2, "title": "复数的乘、除运算", "total": 9, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 3,
+          "title": "复数的三角表示",
+          "startPage": 47,
+          "children": [
+            { "index": 1, "title": "复数的三角表示式", "total": 8, "startQuestionID": 1 },
+            { "index": 2, "title": "复数乘、除运算的三角表示及其几何意义", "total": 8, "startQuestionID": 1 }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 8,
+      "title": "立体几何初步",
+      "startPage": 55,
+      "children": [
+        {
+          "index": 1,
+          "title": "基本立体图形",
+          "startPage": 55,
+          "children": [
+            { "index": 1, "title": "棱柱、棱锥、棱台", "total": 8, "startQuestionID": 1 },
+            { "index": 2, "title": "圆柱、圆锥、圆台与球", "total": 7, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 2,
+          "title": "立体图形的直观图",
+          "startPage": 59,
+          "children": [
+            { "index": 1, "title": "立体图形的直观图", "total": 8, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 3,
+          "title": "简单几何体的表面积与体积",
+          "startPage": 60,
+          "children": [
+            { "index": 1, "title": "棱柱、棱锥、棱台的表面积和体积", "total": 9, "startQuestionID": 1 },
+            { "index": 2, "title": "圆柱、圆锥、圆台、球的表面积和体积", "total": 10, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 4,
+          "title": "空间点、直线、平面之间的位置关系",
+          "startPage": 67,
+          "children": [
+            { "index": 1, "title": "平面", "total": 7, "startQuestionID": 1 },
+            { "index": 2, "title": "空间点、直线、平面之间的位置关系", "total": 9, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 5,
+          "title": "空间直线、平面的平行",
+          "startPage": 70,
+          "children": [
+            { "index": 1, "title": "直线与直线平行", "total": 7, "startQuestionID": 1 },
+            { "index": 2, "title": "直线与平面平行", "total": 8, "startQuestionID": 1 },
+            { "index": 3, "title": "平面与平面平行", "total": 8, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 6,
+          "title": "空间直线、平面的垂直",
+          "startPage": 79,
+          "children": [
+            { "index": 1, "title": "直线与直线垂直", "total": 7, "startQuestionID": 1 },
+            { "index": 2, "title": "直线与平面垂直", "total": 10, "startQuestionID": 1 },
+            { "index": 3, "title": "平面与平面垂直", "total": 9, "startQuestionID": 1 }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 9,
+      "title": "统计",
+      "startPage": 102,
+      "children": [
+        {
+          "index": 1,
+          "title": "随机抽样",
+          "startPage": 102,
+          "children": [
+            { "index": 1, "title": "简单随机抽样", "total": 8, "startQuestionID": 1 },
+            { "index": 2, "title": "分层随机抽样", "total": 7, "startQuestionID": 1 },
+            { "index": 3, "title": "获取数据的途径", "total": 6, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 2,
+          "title": "用样本估计总体",
+          "startPage": 106,
+          "children": [
+            { "index": 1, "title": "总体取值规律的估计", "total": 8, "startQuestionID": 1 },
+            { "index": 2, "title": "总体百分位数的估计", "total": 7, "startQuestionID": 1 },
+            { "index": 3, "title": "总体集中趋势的估计", "total": 9, "startQuestionID": 1 },
+            { "index": 4, "title": "总体离散程度的估计", "total": 8, "startQuestionID": 1 }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 10,
+      "title": "概率",
+      "startPage": 127,
+      "children": [
+        {
+          "index": 1,
+          "title": "随机事件与概率",
+          "startPage": 127,
+          "children": [
+            { "index": 1, "title": "有限样本空间与随机事件", "total": 8, "startQuestionID": 1 },
+            { "index": 2, "title": "事件的关系和运算", "total": 7, "startQuestionID": 1 },
+            { "index": 3, "title": "古典概型", "total": 9, "startQuestionID": 1 },
+            { "index": 4, "title": "概率的基本性质", "total": 8, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 2,
+          "title": "事件的相互独立性",
+          "startPage": 137,
+          "children": [
+            { "index": 1, "title": "事件的相互独立性", "total": 8, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 3,
+          "title": "频率与概率",
+          "startPage": 140,
+          "children": [
+            { "index": 1, "title": "频率的稳定性", "total": 8, "startQuestionID": 1 },
+            { "index": 2, "title": "随机模拟", "total": 7, "startQuestionID": 1 }
+          ]
+        }
+      ]
+    }
+  ]
+}

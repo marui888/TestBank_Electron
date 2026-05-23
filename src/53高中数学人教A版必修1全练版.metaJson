@@ -1,0 +1,254 @@
+{
+  "schemaVersion": 1,
+  "name": "53高中数学人教A版必修1全练版",
+  "type": "book",
+  "pageGap": 3,
+  "segmentNames": ["章", "节", "小节"],
+  "roots": [
+    {
+      "index": 1,
+      "title": "集合与常用逻辑用语",
+      "startPage": 1,
+      "children": [
+        {
+          "index": 1,
+          "title": "集合的概念",
+          "startPage": 1,
+          "children": [
+            { "index": 1, "title": "集合的概念", "total": 8, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 2,
+          "title": "集合间的基本关系",
+          "startPage": 3,
+          "children": [
+            { "index": 1, "title": "集合间的基本关系", "total": 9, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 3,
+          "title": "集合的基本运算",
+          "startPage": 5,
+          "children": [
+            { "index": 1, "title": "集合的基本运算", "total": 10, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 4,
+          "title": "充分条件与必要条件",
+          "startPage": 7,
+          "children": [
+            { "index": 1, "title": "充分条件与必要条件", "total": 7, "startQuestionID": 1 },
+            { "index": 2, "title": "充要条件", "total": 6, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 5,
+          "title": "全称量词与存在量词",
+          "startPage": 9,
+          "children": [
+            { "index": 1, "title": "全称量词与存在量词", "total": 9, "startQuestionID": 1 },
+            { "index": 2, "title": "全称量词命题和存在量词命题的否定", "total": 8, "startQuestionID": 1 }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "title": "一元二次函数、方程和不等式",
+      "startPage": 16,
+      "children": [
+        {
+          "index": 1,
+          "title": "等式性质与不等式性质",
+          "startPage": 16,
+          "children": [
+            { "index": 1, "title": "等式性质与不等式性质", "total": 8, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 2,
+          "title": "基本不等式",
+          "startPage": 18,
+          "children": [
+            { "index": 1, "title": "基本不等式及求最大(小)值", "total": 9, "startQuestionID": 1 },
+            { "index": 2, "title": "基本不等式的应用", "total": 7, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 3,
+          "title": "二次函数与一元二次方程、不等式",
+          "startPage": 25,
+          "children": [
+            { "index": 1, "title": "二次函数与一元二次方程、不等式", "total": 12, "startQuestionID": 1 }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "title": "函数的概念与性质",
+      "startPage": 35,
+      "children": [
+        {
+          "index": 1,
+          "title": "函数的概念及其表示",
+          "startPage": 35,
+          "children": [
+            { "index": 1, "title": "函数的概念", "total": 8, "startQuestionID": 1 },
+            { "index": 2, "title": "函数的表示法", "total": 9, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 2,
+          "title": "函数的基本性质",
+          "startPage": 41,
+          "children": [
+            { "index": 1, "title": "单调性与最大(小)值", "total": 11, "startQuestionID": 1 },
+            { "index": 2, "title": "奇偶性", "total": 8, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 3,
+          "title": "幂函数",
+          "startPage": 51,
+          "children": [
+            { "index": 1, "title": "幂函数", "total": 7, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 4,
+          "title": "函数的应用(一)",
+          "startPage": 53,
+          "children": [
+            { "index": 1, "title": "函数的应用(一)", "total": 10, "startQuestionID": 1 }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "title": "指数函数与对数函数",
+      "startPage": 62,
+      "children": [
+        {
+          "index": 1,
+          "title": "指数",
+          "startPage": 62,
+          "children": [
+            { "index": 1, "title": "n次方根与分数指数幂", "total": 7, "startQuestionID": 1 },
+            { "index": 2, "title": "无理数指数幂及其运算性质", "total": 6, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 2,
+          "title": "指数函数",
+          "startPage": 64,
+          "children": [
+            { "index": 1, "title": "指数函数的概念", "total": 8, "startQuestionID": 1 },
+            { "index": 2, "title": "指数函数的图象和性质", "total": 9, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 3,
+          "title": "对数",
+          "startPage": 69,
+          "children": [
+            { "index": 1, "title": "对数的概念", "total": 7, "startQuestionID": 1 },
+            { "index": 2, "title": "对数的运算", "total": 6, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 4,
+          "title": "对数函数",
+          "startPage": 71,
+          "children": [
+            { "index": 1, "title": "对数函数的概念", "total": 7, "startQuestionID": 1 },
+            { "index": 2, "title": "对数函数的图象和性质", "total": 10, "startQuestionID": 1 },
+            { "index": 3, "title": "不同函数增长的差异", "total": 8, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 5,
+          "title": "函数的应用(二)",
+          "startPage": 78,
+          "children": [
+            { "index": 1, "title": "函数的零点与方程的解", "total": 8, "startQuestionID": 1 },
+            { "index": 2, "title": "用二分法求方程的近似解", "total": 7, "startQuestionID": 1 },
+            { "index": 3, "title": "函数模型的应用", "total": 9, "startQuestionID": 1 }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 5,
+      "title": "三角函数",
+      "startPage": 92,
+      "children": [
+        {
+          "index": 1,
+          "title": "任意角和弧度制",
+          "startPage": 92,
+          "children": [
+            { "index": 1, "title": "任意角", "total": 7, "startQuestionID": 1 },
+            { "index": 2, "title": "弧度制", "total": 8, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 2,
+          "title": "三角函数的概念",
+          "startPage": 96,
+          "children": [
+            { "index": 1, "title": "三角函数的概念", "total": 9, "startQuestionID": 1 },
+            { "index": 2, "title": "同角三角函数的基本关系", "total": 8, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 3,
+          "title": "诱导公式",
+          "startPage": 101,
+          "children": [
+            { "index": 1, "title": "诱导公式", "total": 7, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 4,
+          "title": "三角函数的图象与性质",
+          "startPage": 106,
+          "children": [
+            { "index": 1, "title": "正弦函数、余弦函数的图象", "total": 7, "startQuestionID": 1 },
+            { "index": 2, "title": "正弦函数、余弦函数的性质", "total": 10, "startQuestionID": 1 },
+            { "index": 3, "title": "正切函数的性质与图象", "total": 8, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 5,
+          "title": "三角恒等变换",
+          "startPage": 116,
+          "children": [
+            { "index": 1, "title": "两角和与差的正弦、余弦和正切公式", "total": 8, "startQuestionID": 1 },
+            { "index": 2, "title": "简单的三角恒等变换", "total": 7, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 6,
+          "title": "函数y=Asin(ωx+φ)",
+          "startPage": 127,
+          "children": [
+            { "index": 1, "title": "匀速圆周运动的数学模型", "total": 6, "startQuestionID": 1 },
+            { "index": 2, "title": "函数y=Asin(ωx+φ)的图象", "total": 9, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 7,
+          "title": "三角函数的应用",
+          "startPage": 132,
+          "children": [
+            { "index": 1, "title": "三角函数的应用", "total": 8, "startQuestionID": 1 }
+          ]
+        }
+      ]
+    }
+  ]
+}

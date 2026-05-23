@@ -1,0 +1,173 @@
+{
+  "schemaVersion": 1,
+  "name": "53高中数学人教A版必修1全练版",
+  "type": "book",
+  "pageGap": 3,
+  "segmentNames": ["章", "节", "小节"],
+  "roots": [
+    {
+      "index": 1,
+      "title": "集合",
+      "startPage": 1,
+      "children": [
+        {
+          "index": 1,
+          "title": "集合的概念与表示",
+          "startPage": 1,
+          "children": [
+            { "index": 1, "total": 6, "startQuestionID": 1 },
+            { "index": 2, "total": 5, "startQuestionID": 1 },
+            { "index": 3, "total": 4, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 2,
+          "title": "集合间的基本关系",
+          "startPage": 7,
+          "children": [
+            { "index": 1, "total": 8, "startQuestionID": 1 },
+            { "index": 2, "total": 6, "startQuestionID": 1 },
+            { "index": 3, "total": 5, "startQuestionID": 3 }
+          ]
+        },
+        {
+          "index": 3,
+          "title": "集合的基本运算",
+          "startPage": 12,
+          "children": [
+            { "index": 1, "total": 9, "startQuestionID": 1 },
+            { "index": 2, "total": 8, "startQuestionID": 1 },
+            { "index": 3, "total": 7, "startQuestionID": 2 }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "title": "常用逻辑用语",
+      "startPage": 18,
+      "children": [
+        {
+          "index": 1,
+          "title": "命题与量词",
+          "startPage": 18,
+          "children": [
+            { "index": 1, "total": 5, "startQuestionID": 1 },
+            { "index": 2, "total": 6, "startQuestionID": 1 },
+            { "index": 3, "total": 7, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 2,
+          "title": "充分条件与必要条件",
+          "startPage": 24,
+          "children": [
+            { "index": 1, "total": 8, "startQuestionID": 1 },
+            { "index": 2, "total": 6, "startQuestionID": 1 },
+            { "index": 3, "total": 5, "startQuestionID": 4 }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "title": "一元二次函数、方程和不等式",
+      "startPage": 30,
+      "children": [
+        {
+          "index": 1,
+          "title": "等式性质与不等式性质",
+          "startPage": 30,
+          "children": [
+            { "index": 1, "total": 6, "startQuestionID": 1 },
+            { "index": 2, "total": 7, "startQuestionID": 1 },
+            { "index": 3, "total": 6, "startQuestionID": 3 }
+          ]
+        },
+        {
+          "index": 2,
+          "title": "一元二次方程与不等式",
+          "startPage": 36,
+          "children": [
+            { "index": 1, "total": 3, "startQuestionID": 2 },
+            { "index": 2, "total": 5, "startQuestionID": 1 },
+            { "index": 3, "total": 7, "startQuestionID": 1 }
+          ]
+        },
+        {
+          "index": 3,
+          "title": "三个二次的综合应用",
+          "startPage": 42,
+          "children": [
+            { "index": 1, "total": 7, "startQuestionID": 1 },
+            { "index": 2, "total": 6, "startQuestionID": 1 }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "title": "指数函数与对数函数",
+      "startPage": 45,
+      "children": [
+        {
+          "index": 1,
+          "title": "指数",
+          "startPage": 45,
+          "children": [
+            { "index": 1, "total": 6, "startQuestionID": 1 },
+            { "index": 2, "total": 5, "startQuestionID": 1 },
+            { "index": 3, "total": 7, "startQuestionID": 2 }
+          ]
+        },
+        {
+          "index": 2,
+          "title": "指数函数",
+          "startPage": 50,
+          "children": [
+            { "index": 1, "total": 6, "startQuestionID": 1 },
+            { "index": 2, "total": 7, "startQuestionID": 1 },
+            { "index": 3, "total": 6, "startQuestionID": 3 }
+          ]
+        },
+        {
+          "index": 3,
+          "title": "对数与对数函数",
+          "startPage": 55,
+          "children": [
+            { "index": 1, "total": 7, "startQuestionID": 1 },
+            { "index": 2, "total": 6, "startQuestionID": 1 },
+            { "index": 3, "total": 8, "startQuestionID": 1 }
+          ]
+        }
+      ]
+    },
+    {
+      "index": 5,
+      "title": "三角函数",
+      "startPage": 61,
+      "children": [
+        {
+          "index": 1,
+          "title": "任意角和弧度制",
+          "startPage": 61,
+          "children": [
+            { "index": 1, "total": 5, "startQuestionID": 1 },
+            { "index": 2, "total": 6, "startQuestionID": 1 },
+            { "index": 3, "total": 5, "startQuestionID": 2 }
+          ]
+        },
+        {
+          "index": 2,
+          "title": "三角函数的概念",
+          "startPage": 66,
+          "children": [
+            { "index": 1, "total": 8, "startQuestionID": 1 },
+            { "index": 2, "total": 6, "startQuestionID": 1 },
+            { "index": 3, "total": 5, "startQuestionID": 4 }
+          ]
+        }
+      ]
+    }
+  ]
+}

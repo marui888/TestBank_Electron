@@ -10,8 +10,7 @@ import ShapePropertyEditor from "./components/ShapePropertyEditor";
 import PdfMainView from "./components/PdfMainView";
 import PdfRegionPreview from "./components/PdfRegionPreview";
 import "./App.css";
-import sourceMetadataText from "./dummy_53_math_required1_metadata.md?raw";
-import { getQuestionListForPdfPage, parseSourceMetadata } from "./utilities";
+import { getQuestionListForPdfPage, parseSourceMetadataJson } from "./utilities";
 import { getDefaultBusinessProps } from "./shapeProperties/shapePropertyDefaults";
 import { shapePropertySchemas } from "./shapeProperties/shapePropertySchemas";
 import {
@@ -55,6 +54,9 @@ export default function App() {
   const [pdfName, setPdfName] = useState("");
   const [pdfPath, setPdfPath] = useState("");
   const [pdfJsonPath, setPdfJsonPath] = useState("");
+  const [pdfMetaJsonPath, setPdfMetaJsonPath] = useState("");
+  const [sourceMetadata, setSourceMetadata] = useState(null);
+  const [sourceMetadataError, setSourceMetadataError] = useState("");
   const [displayPdf, setDisplayPdf] = useState(false);
   const [pdfTabs, setPdfTabs] = useState([]);
   const [activePdfTabId, setActivePdfTabId] = useState(null);
@@ -103,13 +105,11 @@ export default function App() {
   const [isMiddlePanning, setIsMiddlePanning] = useState(false);
   const [questionSegmentInfo, setQuestionSegmentInfo] = useState(null);
   const [questionItems, setQuestionItems] = useState([]);
+  const [questionSegmentRangeMode, setQuestionSegmentRangeMode] =
+    useState("default");
   const dragStartX = useRef(0);
   const startSecondaryWidth = useRef(DEFAULT_SECONDARY_WIDTH);
 
-  const sourceMetadata = useMemo(
-    () => parseSourceMetadata(sourceMetadataText),
-    [],
-  );
   function addDebugMessage(message, detail) {
     const timestamp = new Date().toLocaleTimeString();
     const detailText =
@@ -153,6 +153,9 @@ export default function App() {
       pdfName,
       pdfPath,
       pdfJsonPath,
+      pdfMetaJsonPath,
+      sourceMetadata,
+      sourceMetadataError,
       displayPdf,
       hasUnsavedChanges,
       saveStatus,
@@ -176,6 +179,7 @@ export default function App() {
       propertyEditorShape,
       questionSegmentInfo,
       questionItems,
+      questionSegmentRangeMode,
       ...overrides,
     };
   }
@@ -229,6 +233,17 @@ export default function App() {
     );
   }
 
+  function getSourceMetadataFromOpenedPdf(result) {
+    if (!result?.pdfMetaJson || result.pdfMetaJsonError) return null;
+
+    try {
+      return parseSourceMetadataJson(result.pdfMetaJson);
+    } catch (error) {
+      console.error("[metadata] parse .metaJson failed:", error);
+      return null;
+    }
+  }
+
   function getOpenedPdfTab(result, workspace) {
     return {
       ...getCurrentPdfTabSnapshot({
@@ -236,6 +251,9 @@ export default function App() {
         pdfName: result.pdfName || "",
         pdfPath: result.pdfPath || "",
         pdfJsonPath: result.pdfJsonPath || "",
+        pdfMetaJsonPath: result.pdfMetaJsonPath || "",
+        sourceMetadata: getSourceMetadataFromOpenedPdf(result),
+        sourceMetadataError: result.pdfMetaJsonError || "",
         displayPdf: true,
         hasUnsavedChanges: false,
         saveStatus: result.pdfJson ? "Loaded .pdfJson" : "No .pdfJson found",
@@ -259,6 +277,7 @@ export default function App() {
         propertyEditorShape: null,
         questionSegmentInfo: null,
         questionItems: [],
+        questionSegmentRangeMode: "default",
       }),
     };
   }
@@ -277,6 +296,9 @@ export default function App() {
     setPdfName(tab?.pdfName || "");
     setPdfPath(tab?.pdfPath || "");
     setPdfJsonPath(tab?.pdfJsonPath || "");
+    setPdfMetaJsonPath(tab?.pdfMetaJsonPath || "");
+    setSourceMetadata(tab?.sourceMetadata || null);
+    setSourceMetadataError(tab?.sourceMetadataError || "");
     setCurrentPage(tab?.currentPage || 1);
     setPageInputValue(tab?.pageInputValue || "1");
     setTotalPages(tab?.totalPages || 0);
@@ -298,6 +320,7 @@ export default function App() {
     questionSegmentIdRef.current = null;
     setQuestionSegmentInfo(tab?.questionSegmentInfo || null);
     setQuestionItems(tab?.questionItems || []);
+    setQuestionSegmentRangeMode(tab?.questionSegmentRangeMode || "default");
     setHasUnsavedChanges(Boolean(tab?.hasUnsavedChanges));
     setSaveStatus(tab?.saveStatus || "");
 
@@ -351,7 +374,15 @@ export default function App() {
 
   useEffect(() => {
     latestWorkspaceRef.current = getCurrentWorkspaceData();
-  }, [pdfName, pdfPath, rectangles, lines, detectedRectangles, freeRectangles]);
+  }, [
+    pdfName,
+    pdfPath,
+    pdfMetaJsonPath,
+    rectangles,
+    lines,
+    detectedRectangles,
+    freeRectangles,
+  ]);
 
   useEffect(() => {
     if (!activePdfTabId || isHydratingPdfTabRef.current) return;
@@ -362,6 +393,9 @@ export default function App() {
     pdfName,
     pdfPath,
     pdfJsonPath,
+    pdfMetaJsonPath,
+    sourceMetadata,
+    sourceMetadataError,
     displayPdf,
     hasUnsavedChanges,
     saveStatus,
@@ -385,6 +419,7 @@ export default function App() {
     propertyEditorShape,
     questionSegmentInfo,
     questionItems,
+    questionSegmentRangeMode,
   ]);
 
   const memoFile = useMemo(() => {
@@ -453,6 +488,7 @@ export default function App() {
       pdf: {
         fileName: pdfName,
         filePath: pdfPath,
+        metaJsonPath: pdfMetaJsonPath,
       },
       workspace: {
         rectangles,
@@ -475,6 +511,9 @@ export default function App() {
     setPdfName("");
     setPdfPath("");
     setPdfJsonPath("");
+    setPdfMetaJsonPath("");
+    setSourceMetadata(null);
+    setSourceMetadataError("");
     setCurrentPage(1);
     setPageInputValue("1");
     setTotalPages(0);
@@ -496,6 +535,7 @@ export default function App() {
     questionSegmentIdRef.current = null;
     setQuestionSegmentInfo(null);
     setQuestionItems([]);
+    setQuestionSegmentRangeMode("default");
     setHasUnsavedChanges(false);
     setSaveStatus("");
   }
@@ -995,7 +1035,7 @@ export default function App() {
   }
 
   function clearCurrentPageShapes() {
-    if (!window.confirm("纭娓呯┖褰撳墠椤电殑鍥惧舰鍚楋紵")) return;
+    if (!window.confirm("Clear All ?")) return;
 
     setRectangles((oldRectangles) =>
       oldRectangles.filter((rect) => rect.page !== currentPage),
@@ -1145,10 +1185,10 @@ export default function App() {
   }
 
   function getShapeTypeLabel(shapeType) {
-    if (shapeType === "rect") return "鎵嬬粯鐭╁舰";
-    if (shapeType === "freeRect") return "鑷敱鐭╁舰";
-    if (shapeType === "detectedRect") return "鎵惧嚭鐭╁舰";
-    if (shapeType === "line") return "鐩寸嚎";
+    if (shapeType === "rect") return "rect";
+    if (shapeType === "freeRect") return "freeRect";
+    if (shapeType === "detectedRect") return "detectedRect";
+    if (shapeType === "line") return "line";
     return "鍥惧舰";
   }
 
@@ -1281,12 +1321,17 @@ export default function App() {
   }, [currentPage]);
 
   useEffect(() => {
-    const result = getQuestionListForPdfPage(sourceMetadata, currentPage);
+    const result = getQuestionListForPdfPage(
+      sourceMetadata,
+      currentPage,
+      questionSegmentRangeMode,
+    );
     const nextSegmentId = result.segment?.id || null;
+    const nextSegmentKey = `${nextSegmentId || "none"}:${questionSegmentRangeMode}`;
 
-    if (questionSegmentIdRef.current === nextSegmentId) return;
+    if (questionSegmentIdRef.current === nextSegmentKey) return;
 
-    questionSegmentIdRef.current = nextSegmentId;
+    questionSegmentIdRef.current = nextSegmentKey;
     setQuestionSegmentInfo(
       result.segment
         ? {
@@ -1296,11 +1341,12 @@ export default function App() {
             sourcePage: result.sourcePage,
             startPage: result.segment.startPage,
             endPage: result.segment.endPage,
+            segmentCount: result.segments.length,
           }
         : null,
     );
     setQuestionItems(result.questions);
-  }, [currentPage, sourceMetadata]);
+  }, [currentPage, sourceMetadata, questionSegmentRangeMode]);
 
   useEffect(() => {
     function handleKeyDown(e) {
@@ -1772,14 +1818,40 @@ export default function App() {
               </div>
 
               <div className="sidebar-section question-number-section">
-                <div className="sidebar-title">QuesID</div>
-                {!questionSegmentInfo && (
+                <div className="question-number-header">
+                  <div className="sidebar-title">QuesID</div>
+                  <select
+                    className="question-range-select"
+                    value={questionSegmentRangeMode}
+                    disabled={!sourceMetadata || Boolean(sourceMetadataError)}
+                    onChange={(event) =>
+                      setQuestionSegmentRangeMode(event.target.value)
+                    }
+                  >
+                    <option value="default">default</option>
+                    <option value="prev">prev</option>
+                    <option value="next">next</option>
+                  </select>
+                </div>
+                {sourceMetadataError && (
+                  <div className="empty-text">
+                    Failed to load metadata: {sourceMetadataError}
+                  </div>
+                )}
+
+                {!sourceMetadataError && !sourceMetadata && (
+                  <div className="empty-text">
+                    No metadata loaded for current PDF
+                  </div>
+                )}
+
+                {!sourceMetadataError && sourceMetadata && !questionSegmentInfo && (
                   <div className="empty-text">
                     Current page is not in a metadata segment
                   </div>
                 )}
 
-                {questionSegmentInfo && (
+                {!sourceMetadataError && questionSegmentInfo && (
                   <>
                     <div className="question-segment-meta">
                       <div>{questionSegmentInfo.id}</div>
@@ -1794,11 +1866,12 @@ export default function App() {
 
                     <div className="question-number-list">
                       {questionItems.map((item) => (
-                        <div className="question-number-item" key={item.id}>
-                          <div className="question-number-id">{item.id}</div>
-                          <div className="question-number-name">
-                            {item.name}
-                          </div>
+                        <div
+                          className="question-number-item"
+                          key={item.id}
+                          title={item.name}
+                        >
+                          {item.id}
                         </div>
                       ))}
                     </div>

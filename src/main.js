@@ -19,6 +19,10 @@ function getPdfJsonPath(pdfPath) {
   return pdfPath.replace(/\.pdf$/i, '.pdfJson');
 }
 
+function getMetaJsonPath(pdfPath) {
+  return pdfPath.replace(/\.pdf$/i, '.metaJson');
+}
+
 async function readRecentFiles() {
   try {
     const text = await fs.readFile(getRecentFilesPath(), 'utf8');
@@ -70,9 +74,38 @@ async function readPdfJson(pdfPath) {
   }
 }
 
+async function readMetaJson(pdfPath) {
+  const metaJsonPath = getMetaJsonPath(pdfPath);
+
+  try {
+    const text = await fs.readFile(metaJsonPath, 'utf8');
+
+    return {
+      metaJsonPath,
+      data: JSON.parse(text),
+      error: null,
+    };
+  } catch (error) {
+    if (error?.code === 'ENOENT') {
+      return {
+        metaJsonPath,
+        data: null,
+        error: null,
+      };
+    }
+
+    return {
+      metaJsonPath,
+      data: null,
+      error: error.message || String(error),
+    };
+  }
+}
+
 async function openPdfByPath(pdfPath) {
   const pdfBuffer = await fs.readFile(pdfPath);
   const jsonResult = await readPdfJson(pdfPath);
+  const metaJsonResult = await readMetaJson(pdfPath);
   const recentFiles = await rememberRecentFile(pdfPath);
 
   return {
@@ -84,6 +117,9 @@ async function openPdfByPath(pdfPath) {
     ),
     pdfJsonPath: jsonResult.jsonPath,
     pdfJson: jsonResult.data,
+    pdfMetaJsonPath: metaJsonResult.metaJsonPath,
+    pdfMetaJson: metaJsonResult.data,
+    pdfMetaJsonError: metaJsonResult.error,
     recentFiles,
   };
 }
@@ -155,6 +191,8 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
     },
   });
+
+  mainWindow.maximize();
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
