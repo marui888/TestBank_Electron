@@ -9,6 +9,7 @@ import { pdfjs } from "react-pdf";
 import ShapePropertyEditor from "./components/ShapePropertyEditor";
 import PdfMainView from "./components/PdfMainView";
 import PdfRegionPreview from "./components/PdfRegionPreview";
+import QuestionBrowseView from "./components/QuestionBrowseView";
 import "./App.css";
 import { getQuestionListForPdfPage, parseSourceMetadataJson } from "./utilities";
 import { getDefaultBusinessProps } from "./shapeProperties/shapePropertyDefaults";
@@ -72,6 +73,7 @@ export default function App() {
   const [totalPages, setTotalPages] = useState(0);
   const [pageSize, setPageSize] = useState({ width: 0, height: 0 });
   const [scale, setScale] = useState(1);
+  const [fitScale, setFitScale] = useState(1);
   const [autoScaleDone, setAutoScaleDone] = useState(false);
 
   const pdfMainViewRef = useRef(null);
@@ -100,6 +102,8 @@ export default function App() {
 
   const [secondaryWidth, setSecondaryWidth] = useState(DEFAULT_SECONDARY_WIDTH);
   const [contentViewMode, setContentViewMode] = useState("both");
+  const [workspaceMode, setWorkspaceMode] = useState("annotate");
+  const [browseQuestionId, setBrowseQuestionId] = useState("");
   const [activeLeftTab, setActiveLeftTab] = useState("tools");
   const [activeRightTab, setActiveRightTab] = useState("tools");
   const [isDraggingSplitter, setIsDraggingSplitter] = useState(false);
@@ -166,6 +170,7 @@ export default function App() {
       totalPages,
       pageSize,
       scale,
+      fitScale,
       autoScaleDone,
       currentRect,
       currentLine,
@@ -264,6 +269,7 @@ export default function App() {
         totalPages: 0,
         pageSize: { width: 0, height: 0 },
         scale: 1,
+        fitScale: 1,
         autoScaleDone: false,
         currentRect: null,
         currentLine: null,
@@ -306,6 +312,7 @@ export default function App() {
     setTotalPages(tab?.totalPages || 0);
     setPageSize(tab?.pageSize || { width: 0, height: 0 });
     setScale(tab?.scale || 1);
+    setFitScale(tab?.fitScale || tab?.scale || 1);
     setAutoScaleDone(Boolean(tab?.autoScaleDone));
     setCurrentRect(tab?.currentRect || null);
     setCurrentLine(tab?.currentLine || null);
@@ -406,6 +413,7 @@ export default function App() {
     totalPages,
     pageSize,
     scale,
+    fitScale,
     autoScaleDone,
     currentRect,
     currentLine,
@@ -521,6 +529,7 @@ export default function App() {
     setTotalPages(0);
     setPageSize({ width: 0, height: 0 });
     setScale(1);
+    setFitScale(1);
     setAutoScaleDone(false);
     setCurrentRect(null);
     setCurrentLine(null);
@@ -800,6 +809,7 @@ export default function App() {
     if (!autoScaleDone) {
       const nextScale = calculateFitScale(viewport.width, viewport.height);
       setScale(nextScale);
+      setFitScale(nextScale);
       setAutoScaleDone(true);
       console.log("[pdf] auto fit scale applied:", nextScale);
     }
@@ -828,6 +838,7 @@ export default function App() {
 
     const nextScale = calculateFitScale(pageSize.width, pageSize.height);
     setScale(nextScale);
+    setFitScale(nextScale);
     setAutoScaleDone(true);
 
     console.log("[reset] scale:", nextScale);
@@ -1367,6 +1378,17 @@ export default function App() {
     return "rgba(255, 255, 255, 0.97)";
   }
 
+  function handleRectSlotDoubleClick({ slot, rect, rectType }) {
+    if (slot !== "label") return;
+    if (rectType !== "freeRect" && rectType !== "detectedRect") return;
+
+    const questionId = rect.businessProps?.questionId;
+    if (!questionId) return;
+
+    setBrowseQuestionId(questionId);
+    setWorkspaceMode("entityBrowse");
+  }
+
   const visibleRectangles = rectangles.filter(
     (rect) => rect.page === currentPage,
   );
@@ -1540,6 +1562,7 @@ export default function App() {
 
   return (
     <div className="app-container">
+      {workspaceMode === "annotate" && (
       <aside className="left-tabs-shell">
         <nav
           className="left-tab-list"
@@ -1784,8 +1807,29 @@ export default function App() {
           )}
         </div>
       </aside>
+      )}
 
       <main className="content-area">
+        <div
+          className={`workspace-pane entity-browse-pane ${
+            workspaceMode === "entityBrowse" ? "active" : "hidden-pane"
+          }`}
+        >
+          <QuestionBrowseView
+            pdfDoc={pdfDocState}
+            questionId={browseQuestionId}
+            onQuestionIdChange={setBrowseQuestionId}
+            freeRectangles={freeRectangles}
+            detectedRectangles={detectedRectangles}
+            onBack={() => setWorkspaceMode("annotate")}
+          />
+        </div>
+
+        <div
+          className={`workspace-pane annotate-pane ${
+            workspaceMode === "annotate" ? "active" : "hidden-pane"
+          }`}
+        >
         <div
           className={`main-view-shell ${
             contentViewMode === "secondaryOnly" ? "hidden-pane" : ""
@@ -1822,6 +1866,7 @@ export default function App() {
                     pageSize={isActive ? pageSize : tab.pageSize}
                     currentPage={isActive ? currentPage : tab.currentPage}
                     scale={isActive ? scale : tab.scale}
+                    fitScale={isActive ? fitScale : tab.fitScale}
                     isDraggingShape={isActive && isDraggingShape}
                     selectedShape={isActive ? selectedShape : tab.selectedShape}
                     visibleRectangles={isActive ? visibleRectangles : []}
@@ -1877,6 +1922,9 @@ export default function App() {
                     }
                     onPageLoadSuccess={isActive ? handlePageLoadSuccess : noop}
                     onPageLoadError={isActive ? handlePageLoadError : noop}
+                    onRectSlotDoubleClick={
+                      isActive ? handleRectSlotDoubleClick : noop
+                    }
                   />
                 </div>
               );
@@ -1960,6 +2008,7 @@ export default function App() {
             ))}
           </div>
         </section>
+        </div>
       </main>
 
       <aside className="right-tabs-shell">
@@ -1977,6 +2026,13 @@ export default function App() {
                 <div className="sidebar-title">Right Tools</div>
                 <button type="button" onClick={toggleContentView}>
                   Toggle
+                </button>
+                <button
+                  type="button"
+                  className="entity-browse-entry-button"
+                  onClick={() => setWorkspaceMode("entityBrowse")}
+                >
+                  进入实体浏览
                 </button>
               </div>
 

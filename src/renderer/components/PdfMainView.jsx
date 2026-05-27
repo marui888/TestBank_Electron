@@ -32,6 +32,7 @@ const PdfMainView = forwardRef(function PdfMainView(
     pageSize,
     currentPage,
     scale,
+    fitScale,
     isDraggingShape,
     selectedShape,
     visibleRectangles,
@@ -67,6 +68,7 @@ const PdfMainView = forwardRef(function PdfMainView(
     onDocumentSourceError,
     onPageLoadSuccess,
     onPageLoadError,
+    onRectSlotDoubleClick,
   },
   ref,
 ) {
@@ -542,7 +544,7 @@ const PdfMainView = forwardRef(function PdfMainView(
   }
 
   function handleRectSlotDoubleClick(payload) {
-    console.log("[rect-slot] double click:", payload);
+    onRectSlotDoubleClick?.(payload);
   }
 
   return (
@@ -607,6 +609,7 @@ const PdfMainView = forwardRef(function PdfMainView(
                       rect={rect}
                       rectType="rect"
                       scale={scale}
+                      baseScale={fitScale}
                       selected={
                         selectedShape?.type === "rect" &&
                         rect.id === selectedShape.id
@@ -652,6 +655,7 @@ const PdfMainView = forwardRef(function PdfMainView(
                       rect={rect}
                       rectType="detectedRect"
                       scale={scale}
+                      baseScale={fitScale}
                       selected={
                         selectedShape?.type === "detectedRect" &&
                         rect.id === selectedShape.id
@@ -679,6 +683,7 @@ const PdfMainView = forwardRef(function PdfMainView(
                       rect={rect}
                       rectType="freeRect"
                       scale={scale}
+                      baseScale={fitScale}
                       selected={
                         selectedShape?.type === "freeRect" &&
                         rect.id === selectedShape.id
