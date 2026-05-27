@@ -1,7 +1,9 @@
 import { forwardRef, useImperativeHandle, useRef } from "react";
 import { Document, Page } from "react-pdf";
 import { Stage, Layer, Rect, Line } from "react-konva";
+import PdfAnnotatedRect from "./PdfAnnotatedRect";
 import { getDefaultBusinessProps } from "../shapeProperties/shapePropertyDefaults";
+import { getPdfRectSlots } from "../pdfRectSlots";
 import {
   getDistance,
   getDraggedLine,
@@ -539,6 +541,10 @@ const PdfMainView = forwardRef(function PdfMainView(
     });
   }
 
+  function handleRectSlotDoubleClick(payload) {
+    console.log("[rect-slot] double click:", payload);
+  }
+
   return (
     <section
       className={`main-view ${
@@ -595,22 +601,27 @@ const PdfMainView = forwardRef(function PdfMainView(
                 onContextMenu={handleStageContextMenu}
               >
                 <Layer>
-                  {visibleRectangles.map((rect) => (
-                    <Rect
+                  {visibleRectangles.map((rect, index) => (
+                    <PdfAnnotatedRect
                       key={rect.id}
-                      x={rect.x * scale}
-                      y={rect.y * scale}
-                      width={rect.width * scale}
-                      height={rect.height * scale}
-                      stroke="rgba(70, 158, 70, 0.75)"
-                      strokeWidth={
+                      rect={rect}
+                      rectType="rect"
+                      scale={scale}
+                      selected={
                         selectedShape?.type === "rect" &&
                         rect.id === selectedShape.id
-                          ? 3
-                          : 2
                       }
-                      dash={[6, 4]}
-                      fill="rgba(70, 158, 70, 0.15)"
+                      rectProps={{
+                        stroke: "rgba(70, 158, 70, 0.75)",
+                        strokeWidth: 2,
+                        selectedStrokeWidth: 3,
+                        dash: [6, 4],
+                        fill: "rgba(70, 158, 70, 0.15)",
+                      }}
+                      slots={getPdfRectSlots(rect, "rect", {
+                        index: index + 1,
+                      })}
+                      onSlotDoubleClick={handleRectSlotDoubleClick}
                     />
                   ))}
 
@@ -635,43 +646,53 @@ const PdfMainView = forwardRef(function PdfMainView(
                 </Layer>
 
                 <Layer>
-                  {visibleDetectedRectangles.map((rect) => (
-                    <Rect
+                  {visibleDetectedRectangles.map((rect, index) => (
+                    <PdfAnnotatedRect
                       key={rect.id}
-                      x={rect.x * scale}
-                      y={rect.y * scale}
-                      width={rect.width * scale}
-                      height={rect.height * scale}
-                      fill={rect.fill}
-                      stroke="green"
-                      strokeWidth={
+                      rect={rect}
+                      rectType="detectedRect"
+                      scale={scale}
+                      selected={
                         selectedShape?.type === "detectedRect" &&
                         rect.id === selectedShape.id
-                          ? 3
-                          : 1
                       }
-                      name="detected-rectangle"
-                      listening={false}
+                      rectProps={{
+                        fill: rect.fill,
+                        stroke: "green",
+                        strokeWidth: 1,
+                        selectedStrokeWidth: 3,
+                        name: "detected-rectangle",
+                        listening: false,
+                      }}
+                      slots={getPdfRectSlots(rect, "detectedRect", {
+                        index: index + 1,
+                      })}
+                      onSlotDoubleClick={handleRectSlotDoubleClick}
                     />
                   ))}
                 </Layer>
 
                 <Layer>
-                  {visibleFreeRectangles.map((rect) => (
-                    <Rect
+                  {visibleFreeRectangles.map((rect, index) => (
+                    <PdfAnnotatedRect
                       key={rect.id}
-                      x={rect.x * scale}
-                      y={rect.y * scale}
-                      width={rect.width * scale}
-                      height={rect.height * scale}
-                      stroke="rgba(72, 92, 214, 0.9)"
-                      strokeWidth={
+                      rect={rect}
+                      rectType="freeRect"
+                      scale={scale}
+                      selected={
                         selectedShape?.type === "freeRect" &&
                         rect.id === selectedShape.id
-                          ? 3
-                          : 2
                       }
-                      fill="rgba(72, 92, 214, 0.12)"
+                      rectProps={{
+                        stroke: "rgba(72, 92, 214, 0.9)",
+                        strokeWidth: 2,
+                        selectedStrokeWidth: 3,
+                        fill: "rgba(72, 92, 214, 0.12)",
+                      }}
+                      slots={getPdfRectSlots(rect, "freeRect", {
+                        index: index + 1,
+                      })}
+                      onSlotDoubleClick={handleRectSlotDoubleClick}
                     />
                   ))}
                 </Layer>

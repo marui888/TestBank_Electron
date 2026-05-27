@@ -12,9 +12,10 @@ import PdfRegionPreview from "./components/PdfRegionPreview";
 import "./App.css";
 import { getQuestionListForPdfPage, parseSourceMetadataJson } from "./utilities";
 import { getDefaultBusinessProps } from "./shapeProperties/shapePropertyDefaults";
-import { shapePropertySchemas } from "./shapeProperties/shapePropertySchemas";
 import {
+  getBusinessPropsFromEditorValue,
   getShapeBusinessProps,
+  getShapePropertyEditorSchema,
   updateShapeBusinessPropsInList,
 } from "./shapeProperties/shapePropertyUtils";
 import {
@@ -107,6 +108,7 @@ export default function App() {
   const [questionItems, setQuestionItems] = useState([]);
   const [questionSegmentRangeMode, setQuestionSegmentRangeMode] =
     useState("default");
+  const [matchInteractionRecords, setMatchInteractionRecords] = useState([]);
   const dragStartX = useRef(0);
   const startSecondaryWidth = useRef(DEFAULT_SECONDARY_WIDTH);
 
@@ -1149,12 +1151,52 @@ export default function App() {
     return null;
   }
 
+  function addMatchInteractionRecord(shapeRef, editorValue, updatedAt) {
+    if (shapeRef?.type !== "freeRect" && shapeRef?.type !== "detectedRect") {
+      return;
+    }
+
+    const nextRecord = {
+      shapeType: shapeRef.type,
+      shapeId: shapeRef.id,
+      questionId: editorValue.questionId || "",
+      contentType: editorValue.contentType || "",
+      isMultiRectPart: Boolean(editorValue.isMultiRectPart),
+      isLastRect: Boolean(editorValue.isLastRect),
+      solutionNo: editorValue.solutionNo || "",
+      fragmentOrder: editorValue.fragmentOrder || "",
+      updatedAt,
+    };
+
+    setMatchInteractionRecords((oldRecords) =>
+      [nextRecord, ...oldRecords]
+        .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))
+        .slice(0, 5),
+    );
+  }
+
   function updateShapeBusinessProps(shapeRef, nextProps) {
     if (!shapeRef) return;
+    const businessProps = getBusinessPropsFromEditorValue(
+      shapeRef.type,
+      nextProps,
+    );
+    const updatedAt = new Date().toISOString();
+    const nextBusinessProps =
+      shapeRef.type === "freeRect" || shapeRef.type === "detectedRect"
+        ? {
+            ...businessProps,
+            updatedAt,
+          }
+        : businessProps;
 
     if (shapeRef.type === "rect") {
       setRectangles((oldRectangles) =>
-        updateShapeBusinessPropsInList(oldRectangles, shapeRef.id, nextProps),
+        updateShapeBusinessPropsInList(
+          oldRectangles,
+          shapeRef.id,
+          nextBusinessProps,
+        ),
       );
       markWorkspaceDirty();
       return;
@@ -1162,23 +1204,33 @@ export default function App() {
 
     if (shapeRef.type === "freeRect") {
       setFreeRectangles((oldRectangles) =>
-        updateShapeBusinessPropsInList(oldRectangles, shapeRef.id, nextProps),
+        updateShapeBusinessPropsInList(
+          oldRectangles,
+          shapeRef.id,
+          nextBusinessProps,
+        ),
       );
+      addMatchInteractionRecord(shapeRef, nextProps, updatedAt);
       markWorkspaceDirty();
       return;
     }
 
     if (shapeRef.type === "detectedRect") {
       setDetectedRectangles((oldRectangles) =>
-        updateShapeBusinessPropsInList(oldRectangles, shapeRef.id, nextProps),
+        updateShapeBusinessPropsInList(
+          oldRectangles,
+          shapeRef.id,
+          nextBusinessProps,
+        ),
       );
+      addMatchInteractionRecord(shapeRef, nextProps, updatedAt);
       markWorkspaceDirty();
       return;
     }
 
     if (shapeRef.type === "line") {
       setLines((oldLines) =>
-        updateShapeBusinessPropsInList(oldLines, shapeRef.id, nextProps),
+        updateShapeBusinessPropsInList(oldLines, shapeRef.id, nextBusinessProps),
       );
       markWorkspaceDirty();
     }
@@ -1190,6 +1242,121 @@ export default function App() {
     if (shapeType === "detectedRect") return "detectedRect";
     if (shapeType === "line") return "line";
     return "鍥惧舰";
+  }
+
+  function getContentTypeLabel(contentType) {
+    if (contentType === "stem") return "题干";
+    if (contentType === "answer") return "答案";
+    if (contentType === "analysis") return "分析";
+    return contentType || "-";
+  }
+
+  function getBooleanText(value) {
+    return value ? "是" : "否";
+  }
+
+  function getNextFragmentOrder(fragmentOrder) {
+    const numericOrder = Number(fragmentOrder);
+
+    if (!Number.isFinite(numericOrder)) return "1";
+
+    return String(Math.min(8, Math.max(1, numericOrder + 1)));
+  }
+
+  function getNextQuestionId(questionId) {
+    const text = String(questionId || "");
+    const match = text.match(/^(.*?)(\d+)$/);
+
+    if (!match) return text;
+
+    const [, prefix, numericPart] = match;
+    const nextNumber = String(Number(numericPart) + 1).padStart(
+      numericPart.length,
+      "0",
+    );
+
+    return `${prefix}${nextNumber}`;
+  }
+
+  function isSameMultiRectFlow(record, openRecord) {
+    return (
+      record.questionId === openRecord.questionId &&
+      record.contentType === openRecord.contentType &&
+      String(record.solutionNo || "") === String(openRecord.solutionNo || "")
+    );
+  }
+
+  function hasCloseRecordAfterOpen(records, openRecordIndex, openRecord) {
+    return records
+      .slice(0, openRecordIndex)
+      .some(
+        (record) =>
+          record.isMultiRectPart &&
+          record.isLastRect &&
+          isSameMultiRectFlow(record, openRecord),
+      );
+  }
+
+  function getNextQuestionInference() {
+    const sourceRecord =
+      matchInteractionRecords.find((record) => record.questionId) || null;
+
+    if (!sourceRecord) return {};
+
+    return {
+      questionId: getNextQuestionId(sourceRecord.questionId),
+      contentType: sourceRecord.contentType || "stem",
+      isMultiRectPart: false,
+      isLastRect: false,
+      solutionNo: sourceRecord.solutionNo || "1",
+      fragmentOrder: "1",
+    };
+  }
+
+  function getQuestionMatchInference() {
+    const openRecordIndex = matchInteractionRecords.findIndex(
+      (record) => record.isMultiRectPart && !record.isLastRect,
+    );
+
+    if (openRecordIndex === -1) {
+      return getNextQuestionInference();
+    }
+
+    const openRecord = matchInteractionRecords[openRecordIndex];
+    const isOpenRecordClosed = hasCloseRecordAfterOpen(
+      matchInteractionRecords,
+      openRecordIndex,
+      openRecord,
+    );
+
+    if (isOpenRecordClosed) {
+      return getNextQuestionInference();
+    }
+
+    return {
+      questionId: openRecord.questionId || "",
+      contentType: openRecord.contentType || "stem",
+      isMultiRectPart: true,
+      isLastRect: false,
+      solutionNo: openRecord.solutionNo || "1",
+      fragmentOrder: getNextFragmentOrder(openRecord.fragmentOrder),
+    };
+  }
+
+  function getPropertyEditorValue(shapeRef, shapeData) {
+    if (!shapeRef) return {};
+
+    const businessValue = getShapeBusinessProps(shapeRef.type, shapeData);
+    const canInfer =
+      (shapeRef.type === "freeRect" || shapeRef.type === "detectedRect") &&
+      !businessValue.questionId;
+
+    if (!canInfer) return businessValue;
+
+    return {
+      ...businessValue,
+      ...getQuestionMatchInference(),
+    };
   }
 
   function getPropertyEditorBackground(shapeType) {
@@ -1264,10 +1431,10 @@ export default function App() {
   const displayHeight = pageSize.height * scale;
   const propertyEditorShapeData = getShapeByRef(propertyEditorShape);
   const propertyEditorSchema = propertyEditorShape
-    ? shapePropertySchemas[propertyEditorShape.type] || []
+    ? getShapePropertyEditorSchema(propertyEditorShape.type)
     : [];
   const propertyEditorValue = propertyEditorShape
-    ? getShapeBusinessProps(propertyEditorShape.type, propertyEditorShapeData)
+    ? getPropertyEditorValue(propertyEditorShape, propertyEditorShapeData)
     : {};
   const propertyEditorMode =
     propertyEditorShape?.type === "rect"
@@ -1811,10 +1978,43 @@ export default function App() {
                 <button type="button" onClick={toggleContentView}>
                   Toggle
                 </button>
-                <button type="button">Dummy 1</button>
-                <button type="button">Dummy 2</button>
-                <button type="button">Dummy 3</button>
-                <button type="button">Dummy 4</button>
+              </div>
+
+              <div className="sidebar-section match-interaction-section">
+                <div className="sidebar-title">历史属性编辑</div>
+                {matchInteractionRecords.length === 0 && (
+                  <div className="empty-text">No recent edits</div>
+                )}
+                {matchInteractionRecords.length > 0 && (
+                  <div className="match-interaction-list">
+                    <div className="match-interaction-header">
+                      <span>id</span>
+                      <span>type</span>
+                      <span>multi</span>
+                      <span>last</span>
+                    </div>
+                    {matchInteractionRecords.map((record) => {
+                      const isOpenMultiRect =
+                        record.isMultiRectPart && !record.isLastRect;
+
+                      return (
+                        <div
+                          key={`${record.updatedAt}-${record.shapeType}-${record.shapeId}`}
+                          className={`match-interaction-item ${
+                            isOpenMultiRect ? "open-multi-rect" : ""
+                          }`}
+                        >
+                          <span title={record.questionId || ""}>
+                            {record.questionId || "-"}
+                          </span>
+                          <span>{getContentTypeLabel(record.contentType)}</span>
+                          <span>{record.isMultiRectPart ? "Y" : "N"}</span>
+                          <span>{record.isLastRect ? "Y" : "N"}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               <div className="sidebar-section question-number-section">

@@ -1,49 +1,61 @@
-const questionMetadataFields = [
+const oneToEightOptions = Array.from({ length: 8 }, (_, index) => {
+  const value = String(index + 1);
+
+  return {
+    label: value,
+    value,
+  };
+});
+
+const questionMatchFields = [
   {
-    name: "questionNo",
-    label: "题号",
+    name: "questionId",
+    label: "题目ID",
     type: "text",
+    defaultValue: "",
+    placeholder: "例如 1.2.3.4",
+    clearable: true,
+  },
+  {
+    name: "contentType",
+    label: "内容分类",
+    type: "select",
     required: true,
-    defaultValue: "0.0.0.0",
-    placeholder: "例如 0.0.0.0",
-  },
-  {
-    name: "stage",
-    label: "学段",
-    type: "select",
-    defaultValue: "undetermined",
+    defaultValue: "stem",
     options: [
-      { label: "小学", value: "primary" },
-      { label: "初中", value: "junior" },
-      { label: "高中", value: "senior" },
-      { label: "未定", value: "undetermined" },
+      { label: "题干", value: "stem" },
+      { label: "答案", value: "answer" },
+      { label: "分析", value: "analysis" },
     ],
   },
   {
-    name: "chapter",
-    label: "章节",
-    type: "select",
-    defaultValue: "undetermined",
-    options: [{ label: "未定", value: "undetermined" }],
+    name: "isMultiRectPart",
+    label: "多个矩形的一部分",
+    type: "checkbox",
+    defaultValue: false,
+    rowGroup: "multi-rect",
   },
   {
-    name: "grade",
-    label: "年级",
+    name: "solutionNo",
+    label: "第几种解法",
     type: "select",
-    defaultValue: "undetermined",
-    options: [{ label: "未定", value: "undetermined" }],
+    defaultValue: "1",
+    options: oneToEightOptions,
+    rowGroup: "solution-fragment",
   },
   {
-    name: "questionType",
-    label: "题型",
+    name: "fragmentOrder",
+    label: "分片顺序",
     type: "select",
-    defaultValue: "undetermined",
-    options: [
-      { label: "选择", value: "choice" },
-      { label: "填空", value: "blank" },
-      { label: "解答", value: "solution" },
-      { label: "未定", value: "undetermined" },
-    ],
+    defaultValue: "1",
+    options: oneToEightOptions,
+    rowGroup: "solution-fragment",
+  },
+  {
+    name: "updatedAt",
+    label: "修改时间",
+    type: "readonly",
+    defaultValue: "",
   },
 ];
 
@@ -68,22 +80,11 @@ export const shapePropertySchemas = {
   ],
   freeRect: [
     {
-      name: "regionType",
-      label: "区域类型",
-      type: "select",
-      required: true,
-      options: [
-        { label: "题干", value: "question" },
-        { label: "选项", value: "option" },
-        { label: "解析", value: "solution" },
-      ],
-    },
-    {
       name: "locked",
       label: "锁定",
       type: "checkbox",
     },
-    ...questionMetadataFields,
+    ...questionMatchFields,
     {
       name: "note",
       label: "备注",
@@ -104,7 +105,7 @@ export const shapePropertySchemas = {
       type: "readonly",
       defaultValue: "auto_detected",
     },
-    ...questionMetadataFields,
+    ...questionMatchFields,
     {
       name: "note",
       label: "备注",

@@ -119,6 +119,17 @@
   color: #222;
 }
 
+.shape-property-single-field-row {
+  min-width: 0;
+}
+
+.shape-property-field-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
 .shape-property-label {
   display: flex;
   align-items: center;
@@ -126,19 +137,61 @@
   font-weight: 700;
 }
 
+.shape-property-field.disabled-field .shape-property-label {
+  color: #777;
+}
+
 .shape-property-required-icon {
   width: 8px;
   color: #c62828;
 }
 
+.shape-property-input-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
 .shape-property-control {
   width: 100%;
+  min-width: 0;
   box-sizing: border-box;
   border: 1px solid rgba(80, 80, 80, 0.32);
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.78);
   padding: 5px 7px;
   font-size: 13px;
+}
+
+.shape-property-clear-field-button {
+  flex: 0 0 auto;
+  border: 1px solid rgba(80, 80, 80, 0.3);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.76);
+  padding: 0 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.shape-property-clear-field-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.shape-property-control.readonly-control {
+  background: rgba(230, 230, 230, 0.82);
+  color: #666;
+  cursor: default;
+}
+
+.shape-property-control:disabled,
+.shape-property-checkbox:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+
+.shape-property-control:disabled {
+  background: rgba(230, 230, 230, 0.78);
 }
 
 textarea.shape-property-control {

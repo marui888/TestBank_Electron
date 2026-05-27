@@ -5,6 +5,7 @@ import {
   faCircleExclamation,
   faXmark,
 } from "@fortawesome/free-solid-svg-icons";
+import { getShapePropertyFieldState } from "../shapeProperties/shapePropertyEditorRules";
 import { validateBusinessProps } from "../shapeProperties/shapePropertyUtils";
 import "./ShapePropertyEditor.css";
 
@@ -18,6 +19,32 @@ const dockClassNames = {
 
 function getValueSignature(value) {
   return JSON.stringify(value || {});
+}
+
+function getFieldRows(schema) {
+  const rows = [];
+  let currentRow = null;
+
+  schema.forEach((field) => {
+    if (!field.rowGroup) {
+      currentRow = null;
+      rows.push([field]);
+      return;
+    }
+
+    if (currentRow?.rowGroup === field.rowGroup) {
+      currentRow.fields.push(field);
+      return;
+    }
+
+    currentRow = {
+      rowGroup: field.rowGroup,
+      fields: [field],
+    };
+    rows.push(currentRow.fields);
+  });
+
+  return rows;
 }
 
 export default function ShapePropertyEditor({
@@ -124,6 +151,10 @@ export default function ShapePropertyEditor({
     }));
   }
 
+  function clearField(field) {
+    updateField(field, "");
+  }
+
   function saveDraft() {
     if (hasErrors) return false;
 
@@ -175,14 +206,27 @@ export default function ShapePropertyEditor({
         </header>
 
         <div className="shape-property-editor-body">
-          {schema.map((field) => (
-            <DynamicField
-              key={field.name}
-              field={field}
-              value={draftValue[field.name]}
-              error={errors[field.name]}
-              onChange={(nextValue) => updateField(field, nextValue)}
-            />
+          {getFieldRows(schema).map((fields) => (
+            <div
+              key={fields.map((field) => field.name).join(":")}
+              className={
+                fields.length > 1
+                  ? "shape-property-field-row"
+                  : "shape-property-single-field-row"
+              }
+            >
+              {fields.map((field) => (
+                <DynamicField
+                  key={field.name}
+                  field={field}
+                  value={draftValue[field.name]}
+                  error={errors[field.name]}
+                  fieldState={getShapePropertyFieldState(field, draftValue)}
+                  onChange={(nextValue) => updateField(field, nextValue)}
+                  onClear={() => clearField(field)}
+                />
+              ))}
+            </div>
           ))}
         </div>
 
@@ -216,11 +260,25 @@ export default function ShapePropertyEditor({
   );
 }
 
-function DynamicField({ field, value, error, onChange }) {
+function DynamicField({
+  field,
+  value,
+  error,
+  fieldState,
+  onChange,
+  onClear,
+}) {
   const fieldId = `shape-property-${field.name}`;
+  const isDisabled = Boolean(fieldState?.disabled);
+  const fieldClassName = [
+    "shape-property-field",
+    isDisabled ? "disabled-field" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
-    <label className="shape-property-field" htmlFor={fieldId}>
+    <label className={fieldClassName} htmlFor={fieldId}>
       <span className="shape-property-label">
         <span>{field.label}</span>
         {field.required && (
@@ -232,18 +290,31 @@ function DynamicField({ field, value, error, onChange }) {
         )}
       </span>
 
-      {renderFieldInput(field, fieldId, value, onChange)}
+      <div className="shape-property-input-row">
+        {renderFieldInput(field, fieldId, value, isDisabled, onChange)}
+        {field.clearable && (
+          <button
+            type="button"
+            className="shape-property-clear-field-button"
+            disabled={isDisabled || !value}
+            onClick={onClear}
+          >
+            清空
+          </button>
+        )}
+      </div>
       {error && <span className="shape-property-error">{error}</span>}
     </label>
   );
 }
 
-function renderFieldInput(field, fieldId, value, onChange) {
+function renderFieldInput(field, fieldId, value, disabled, onChange) {
   if (field.type === "select") {
     return (
       <select
         id={fieldId}
         className="shape-property-control"
+        disabled={disabled}
         value={value ?? ""}
         onChange={(e) => onChange(e.target.value)}
       >
@@ -261,6 +332,7 @@ function renderFieldInput(field, fieldId, value, onChange) {
       <textarea
         id={fieldId}
         className="shape-property-control"
+        disabled={disabled}
         value={value ?? ""}
         placeholder={field.placeholder}
         onChange={(e) => onChange(e.target.value)}
@@ -274,6 +346,7 @@ function renderFieldInput(field, fieldId, value, onChange) {
         id={fieldId}
         className="shape-property-checkbox"
         type="checkbox"
+        disabled={disabled}
         checked={Boolean(value)}
         onChange={(e) => onChange(e.target.checked)}
       />
@@ -284,8 +357,9 @@ function renderFieldInput(field, fieldId, value, onChange) {
     return (
       <input
         id={fieldId}
-        className="shape-property-control"
+        className="shape-property-control readonly-control"
         value={value ?? ""}
+        disabled={disabled}
         readOnly
       />
     );
@@ -296,6 +370,7 @@ function renderFieldInput(field, fieldId, value, onChange) {
       id={fieldId}
       className="shape-property-control"
       type={field.type === "number" ? "number" : "text"}
+      disabled={disabled}
       value={value ?? ""}
       placeholder={field.placeholder}
       onChange={(e) =>

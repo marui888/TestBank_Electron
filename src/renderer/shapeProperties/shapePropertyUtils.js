@@ -1,10 +1,68 @@
 import { getDefaultBusinessProps } from "./shapePropertyDefaults";
+import { shapePropertySchemas } from "./shapePropertySchemas";
+
+const editorOnlyFieldsByShapeType = {
+  freeRect: [
+    {
+      name: "isLastRect",
+      label: "最后矩形",
+      type: "checkbox",
+      defaultValue: false,
+      rowGroup: "multi-rect",
+    },
+  ],
+  detectedRect: [
+    {
+      name: "isLastRect",
+      label: "最后矩形",
+      type: "checkbox",
+      defaultValue: false,
+      rowGroup: "multi-rect",
+    },
+  ],
+};
 
 export function getShapeBusinessProps(shapeType, shape) {
+  const businessProps = shape?.businessProps || {};
+
   return {
     ...getDefaultBusinessProps(shapeType),
-    ...(shape?.businessProps || {}),
+    ...businessProps,
+    questionId: businessProps.questionId || businessProps.questionNo || "",
   };
+}
+
+export function getShapePropertyEditorSchema(shapeType) {
+  const businessSchema = shapePropertySchemas[shapeType] || [];
+  const editorOnlyFields = editorOnlyFieldsByShapeType[shapeType] || [];
+
+  if (editorOnlyFields.length === 0) return businessSchema;
+
+  const insertAfterIndex = businessSchema.findIndex(
+    (field) => field.name === "isMultiRectPart",
+  );
+
+  if (insertAfterIndex === -1) {
+    return [...businessSchema, ...editorOnlyFields];
+  }
+
+  return [
+    ...businessSchema.slice(0, insertAfterIndex + 1),
+    ...editorOnlyFields,
+    ...businessSchema.slice(insertAfterIndex + 1),
+  ];
+}
+
+export function getBusinessPropsFromEditorValue(shapeType, editorValue) {
+  const businessFieldNames = new Set(
+    (shapePropertySchemas[shapeType] || []).map((field) => field.name),
+  );
+
+  return Object.fromEntries(
+    Object.entries(editorValue || {}).filter(([fieldName]) =>
+      businessFieldNames.has(fieldName),
+    ),
+  );
 }
 
 export function updateShapeBusinessPropsInList(list, shapeId, nextProps) {
