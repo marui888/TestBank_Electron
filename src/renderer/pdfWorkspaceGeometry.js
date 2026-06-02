@@ -106,14 +106,23 @@ export function formatNumber(value) {
   return Number.isFinite(value) ? value.toFixed(2) : "0.00";
 }
 
-export function isPointOnLeftBorder(point, rect, scale) {
-  const tolerance = 6 / scale;
-  const withinX = Math.abs(point.x - rect.x) <= tolerance;
-  const withinY =
-    point.y >= rect.y - tolerance &&
-    point.y <= rect.y + rect.height + tolerance;
+function getRectVerticalHotZoneInset(rect, scale) {
+  const maxInset = 24 / scale;
+  const proportionalInset = rect.height * 0.18;
 
-  return withinX && withinY;
+  return Math.min(maxInset, proportionalInset, rect.height / 3);
+}
+
+export function isPointOnRectDragBorder(point, rect, scale) {
+  const tolerance = 6 / scale;
+  const inset = getRectVerticalHotZoneInset(rect, scale);
+  const withinY =
+    point.y >= rect.y + inset &&
+    point.y <= rect.y + rect.height - inset;
+  const nearLeft = Math.abs(point.x - rect.x) <= tolerance;
+  const nearRight = Math.abs(point.x - (rect.x + rect.width)) <= tolerance;
+
+  return withinY && (nearLeft || nearRight);
 }
 
 export function isPointNearLine(point, line, scale) {
@@ -158,15 +167,32 @@ export function isPointInsideBox(point, box) {
   );
 }
 
-export function getRectDragHotZone(rect, scale) {
+function getRectDragHotZone(rect, scale) {
   const tolerance = 8 / scale;
+  const inset = getRectVerticalHotZoneInset(rect, scale);
 
   return {
     x: rect.x - tolerance,
-    y: rect.y - tolerance,
+    y: rect.y + inset,
     width: tolerance * 2,
-    height: rect.height + tolerance * 2,
+    height: Math.max(0, rect.height - inset * 2),
   };
+}
+
+export function getRectDragHotZones(rect, scale) {
+  const leftZone = getRectDragHotZone(rect, scale);
+
+  return [
+    {
+      ...leftZone,
+      name: "left",
+    },
+    {
+      ...leftZone,
+      name: "right",
+      x: rect.x + rect.width - leftZone.width / 2,
+    },
+  ];
 }
 
 export function getResizeHandleSize(scale) {
@@ -188,9 +214,23 @@ export function getRectResizeHandleHitZones(rect, scale) {
 export function getRectResizeHandleBoxes(rect, size) {
   return [
     {
+      name: "topLeft",
+      x: rect.x - size / 2,
+      y: rect.y - size / 2,
+      width: size,
+      height: size,
+    },
+    {
       name: "topRight",
       x: rect.x + rect.width - size / 2,
       y: rect.y - size / 2,
+      width: size,
+      height: size,
+    },
+    {
+      name: "bottomLeft",
+      x: rect.x - size / 2,
+      y: rect.y + rect.height - size / 2,
       width: size,
       height: size,
     },
@@ -259,10 +299,9 @@ export function getLineResizeHandleBoxes(line, size) {
 
 export function getDraggedRect(dragState, dx, dy) {
   const rect = dragState.originalShape;
+  const minSize = 3;
 
   if (dragState.action === "resize" && dragState.handle === "bottomRight") {
-    const minSize = 3;
-
     return {
       ...rect,
       width: Math.max(minSize, rect.width + dx),
@@ -271,7 +310,6 @@ export function getDraggedRect(dragState, dx, dy) {
   }
 
   if (dragState.action === "resize" && dragState.handle === "topRight") {
-    const minSize = 3;
     const bottom = rect.y + rect.height;
     const nextTop = Math.min(bottom - minSize, rect.y + dy);
 
@@ -279,6 +317,33 @@ export function getDraggedRect(dragState, dx, dy) {
       ...rect,
       y: nextTop,
       width: Math.max(minSize, rect.width + dx),
+      height: bottom - nextTop,
+    };
+  }
+
+  if (dragState.action === "resize" && dragState.handle === "bottomLeft") {
+    const right = rect.x + rect.width;
+    const nextLeft = Math.min(right - minSize, rect.x + dx);
+
+    return {
+      ...rect,
+      x: nextLeft,
+      width: right - nextLeft,
+      height: Math.max(minSize, rect.height + dy),
+    };
+  }
+
+  if (dragState.action === "resize" && dragState.handle === "topLeft") {
+    const right = rect.x + rect.width;
+    const bottom = rect.y + rect.height;
+    const nextLeft = Math.min(right - minSize, rect.x + dx);
+    const nextTop = Math.min(bottom - minSize, rect.y + dy);
+
+    return {
+      ...rect,
+      x: nextLeft,
+      y: nextTop,
+      width: right - nextLeft,
       height: bottom - nextTop,
     };
   }

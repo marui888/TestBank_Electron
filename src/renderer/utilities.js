@@ -33,6 +33,15 @@ function getOptionalNumber(value) {
   return Number.isFinite(numberValue) ? numberValue : undefined;
 }
 
+function getPlainMetadataNode(node) {
+  const { parent, level, children, ...plainNode } = node;
+
+  return {
+    ...plainNode,
+    children: (Array.isArray(children) ? children : []).map(getPlainMetadataNode),
+  };
+}
+
 function normalizeMetadataNode(node, level, parent) {
   const normalizedNode = {
     ...node,
@@ -65,6 +74,76 @@ export function parseSourceMetadataJson(rawText) {
     roots: (Array.isArray(metadata.roots) ? metadata.roots : []).map((node) =>
       normalizeMetadataNode(node, 1, null),
     ),
+  };
+}
+
+export function serializeSourceMetadata(metadata) {
+  return {
+    schemaVersion: metadata?.schemaVersion || 1,
+    name: metadata?.name || "",
+    type: metadata?.type || "",
+    pageGap: Number(metadata?.pageGap || 0),
+    segmentNames: Array.isArray(metadata?.segmentNames)
+      ? metadata.segmentNames
+      : [],
+    roots: (Array.isArray(metadata?.roots) ? metadata.roots : []).map(
+      getPlainMetadataNode,
+    ),
+  };
+}
+
+export function getSegmentPathFromQuestionId(questionId) {
+  const parts = String(questionId || "")
+    .split(".")
+    .map((part) => Number(part));
+
+  if (parts.length < 2 || parts.some((part) => !Number.isInteger(part))) {
+    return [];
+  }
+
+  return parts.slice(0, -1);
+}
+
+export function findMetadataNodeByPath(metadata, path) {
+  if (!metadata || !Array.isArray(path) || path.length === 0) return null;
+
+  let nodes = metadata.roots || [];
+  let current = null;
+
+  for (const index of path) {
+    current = nodes.find((node) => node.index === index) || null;
+    if (!current) return null;
+
+    nodes = current.children || [];
+  }
+
+  return current;
+}
+
+function updatePlainNodeByPath(nodes, path, patch, depth = 0) {
+  return (Array.isArray(nodes) ? nodes : []).map((node) => {
+    if (node.index !== path[depth]) return node;
+
+    if (depth === path.length - 1) {
+      return {
+        ...node,
+        ...patch,
+      };
+    }
+
+    return {
+      ...node,
+      children: updatePlainNodeByPath(node.children, path, patch, depth + 1),
+    };
+  });
+}
+
+export function updateMetadataNodeByPath(metadata, path, patch) {
+  const plainMetadata = serializeSourceMetadata(metadata);
+
+  return {
+    ...plainMetadata,
+    roots: updatePlainNodeByPath(plainMetadata.roots, path, patch),
   };
 }
 

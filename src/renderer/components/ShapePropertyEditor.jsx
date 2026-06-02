@@ -47,11 +47,89 @@ function getFieldRows(schema) {
   return rows;
 }
 
+const editorTabLabels = {
+  geometry: "几何属性",
+  business: "业务属性",
+};
+
+const editorSectionLabels = {
+  basic: "基本属性",
+  detail: "详细属性",
+};
+
+function getEditorTabs(schema) {
+  const tabIds = [];
+
+  schema.forEach((field) => {
+    if (!field.viewTab || tabIds.includes(field.viewTab)) return;
+    tabIds.push(field.viewTab);
+  });
+
+  return tabIds.map((id) => ({
+    id,
+    label: editorTabLabels[id] || id,
+  }));
+}
+
+function getSectionedFieldRows(schema) {
+  const sections = [];
+  let currentSection = null;
+  const orderedSchema = [...schema].sort(
+    (a, b) =>
+      (a.viewOrder ?? Number.MAX_SAFE_INTEGER) -
+      (b.viewOrder ?? Number.MAX_SAFE_INTEGER),
+  );
+
+  orderedSchema.forEach((field) => {
+    const sectionId = field.viewSection || "";
+
+    if (!currentSection || currentSection.id !== sectionId) {
+      currentSection = {
+        id: sectionId,
+        label: editorSectionLabels[sectionId] || "",
+        fields: [],
+      };
+      sections.push(currentSection);
+    }
+
+    currentSection.fields.push(field);
+  });
+
+  return sections.map((section) => ({
+    ...section,
+    rows: getFieldRows(section.fields),
+  }));
+}
+
+function getFieldRowClassName(fields) {
+  const classNames = [
+    fields.length > 1
+      ? "shape-property-field-row"
+      : "shape-property-single-field-row",
+  ];
+
+  if (fields[0]?.rowGroup) {
+    classNames.push(`row-group-${fields[0].rowGroup}`);
+  }
+
+  if (fields.some((field) => field.name === "note")) {
+    classNames.push("note-field-row");
+  }
+
+  if (fields.some((field) => field.name === "detailNotes")) {
+    classNames.push("detail-notes-field-row");
+  }
+
+  return classNames.join(" ");
+}
+
 export default function ShapePropertyEditor({
   open,
   editorKey,
   mode = "floating",
   dock = "none",
+  placement = "center",
+  shapeType = "",
   title = "属性编辑",
   schema = [],
   value = {},
@@ -63,6 +141,16 @@ export default function ShapePropertyEditor({
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [draftValue, setDraftValue] = useState(value);
   const [savedValue, setSavedValue] = useState(value);
+  const tabs = useMemo(() => getEditorTabs(schema), [schema]);
+  const [activeTabId, setActiveTabId] = useState("");
+  const visibleSchema =
+    tabs.length > 0
+      ? schema.filter((field) => field.viewTab === activeTabId)
+      : schema;
+  const visibleSections = useMemo(
+    () => getSectionedFieldRows(visibleSchema),
+    [visibleSchema],
+  );
 
   const errors = useMemo(
     () => validateBusinessProps(schema, draftValue),
@@ -78,6 +166,12 @@ export default function ShapePropertyEditor({
     setDraftValue(value);
     setSavedValue(value);
   }, [open, editorKey]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    setActiveTabId(tabs[0]?.id || "");
+  }, [open, editorKey, tabs]);
 
   useEffect(() => {
     function handleMouseMove(e) {
@@ -126,7 +220,11 @@ export default function ShapePropertyEditor({
     "shape-property-editor-shell",
     mode === "modal" ? "modal-mode" : "",
     mode === "dock" ? "dock-mode" : "",
+    placement === "workspace-bottom-right"
+      ? "workspace-bottom-right"
+      : "",
     isDocked ? dockClassNames[dock] : "",
+    shapeType ? `shape-type-${shapeType}` : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -145,10 +243,18 @@ export default function ShapePropertyEditor({
   }
 
   function updateField(field, nextValue) {
-    setDraftValue((oldValue) => ({
-      ...oldValue,
-      [field.name]: nextValue,
-    }));
+    setDraftValue((oldValue) => {
+      const nextDraftValue = {
+        ...oldValue,
+        [field.name]: nextValue,
+      };
+
+      if (field.name === "contentType" && nextValue === "invalid") {
+        nextDraftValue.questionId = "";
+      }
+
+      return nextDraftValue;
+    });
   }
 
   function clearField(field) {
@@ -205,26 +311,57 @@ export default function ShapePropertyEditor({
           </button>
         </header>
 
+        {tabs.length > 0 && (
+          <nav className="shape-property-tabs" aria-label="属性分类">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                className={`shape-property-tab-button ${
+                  activeTabId === tab.id ? "active" : ""
+                }`}
+                onClick={() => setActiveTabId(tab.id)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        )}
+
         <div className="shape-property-editor-body">
-          {getFieldRows(schema).map((fields) => (
+          {visibleSections.map((section, sectionIndex) => (
             <div
-              key={fields.map((field) => field.name).join(":")}
-              className={
-                fields.length > 1
-                  ? "shape-property-field-row"
-                  : "shape-property-single-field-row"
-              }
+              key={`${section.id || "default"}-${sectionIndex}`}
+              className={`shape-property-section ${
+                section.id ? `section-${section.id}` : ""
+              }`}
             >
-              {fields.map((field) => (
-                <DynamicField
-                  key={field.name}
-                  field={field}
-                  value={draftValue[field.name]}
-                  error={errors[field.name]}
-                  fieldState={getShapePropertyFieldState(field, draftValue)}
-                  onChange={(nextValue) => updateField(field, nextValue)}
-                  onClear={() => clearField(field)}
-                />
+              {section.label && (
+                <div className="shape-property-section-title">
+                  {section.label}
+                </div>
+              )}
+              {section.rows.map((fields) => (
+                <div
+                  key={fields.map((field) => field.name).join(":")}
+                  className={getFieldRowClassName(fields)}
+                >
+                  {fields.map((field) => (
+                    <DynamicField
+                      key={field.name}
+                      field={field}
+                      value={
+                        field.mirrorOf
+                          ? draftValue[field.mirrorOf]
+                          : draftValue[field.name]
+                      }
+                      error={errors[field.name]}
+                      fieldState={getShapePropertyFieldState(field, draftValue)}
+                      onChange={(nextValue) => updateField(field, nextValue)}
+                      onClear={() => clearField(field)}
+                    />
+                  ))}
+                </div>
               ))}
             </div>
           ))}

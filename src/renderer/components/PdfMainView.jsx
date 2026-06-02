@@ -12,11 +12,11 @@ import {
   getLineLength,
   getLineMidpoint,
   getLineResizeHandleHitZones,
-  getRectDragHotZone,
+  getRectDragHotZones,
   getRectResizeHandleHitZones,
   isPointInsideBox,
   isPointNearLine,
-  isPointOnLeftBorder,
+  isPointOnRectDragBorder,
   normalizeLine,
   normalizeRect,
 } from "../pdfWorkspaceGeometry";
@@ -39,7 +39,7 @@ const PdfMainView = forwardRef(function PdfMainView(
     visibleLines,
     visibleDetectedRectangles,
     visibleFreeRectangles,
-    selectedRectDragHotZone,
+    selectedRectDragHotZones,
     selectedLineDragHotZone,
     selectedRectResizeHandles,
     selectedLineResizeHandles,
@@ -69,6 +69,7 @@ const PdfMainView = forwardRef(function PdfMainView(
     onPageLoadSuccess,
     onPageLoadError,
     onRectSlotDoubleClick,
+    onLinesEdited,
   },
   ref,
 ) {
@@ -77,6 +78,10 @@ const PdfMainView = forwardRef(function PdfMainView(
   const konvaStageRef = useRef(null);
   const drawStartRef = useRef(null);
   const dragShapeRef = useRef(null);
+  const latestLinesRef = useRef(lines);
+  const editedLinesRef = useRef(null);
+
+  latestLinesRef.current = lines;
 
   useImperativeHandle(
     ref,
@@ -156,7 +161,7 @@ const PdfMainView = forwardRef(function PdfMainView(
         return;
       }
 
-      const hitRect = findLeftBorderHitRect(pagePoint);
+      const hitRect = findBorderHitRect(pagePoint);
 
       if (hitRect) {
         setSelectedShape({ type: hitRect.shapeType, id: hitRect.id });
@@ -255,8 +260,15 @@ const PdfMainView = forwardRef(function PdfMainView(
 
   function handleStageMouseUp() {
     if (dragShapeRef.current) {
+      const dragState = dragShapeRef.current;
+      const nextLines = editedLinesRef.current || latestLinesRef.current;
+
       dragShapeRef.current = null;
+      editedLinesRef.current = null;
       setIsDraggingShape(false);
+      if (dragState.type === "line") {
+        onLinesEdited?.(nextLines, currentPage);
+      }
       markWorkspaceDirty();
       return;
     }
@@ -294,14 +306,21 @@ const PdfMainView = forwardRef(function PdfMainView(
       const normalizedLine = normalizeLine(finalShape);
 
       if (getLineLength(normalizedLine) > 3) {
+        const timestamp = new Date().toISOString();
         const nextLine = {
           ...normalizedLine,
           id: Date.now(),
           page: currentPage,
+          createdAt: timestamp,
+          updatedAt: timestamp,
           businessProps: getDefaultBusinessProps("line"),
         };
 
-        setLines((oldLines) => [...oldLines, nextLine]);
+        const nextLines = [...latestLinesRef.current, nextLine];
+
+        latestLinesRef.current = nextLines;
+        setLines(nextLines);
+        onLinesEdited?.(nextLines, currentPage);
         setSelectedShape({ type: "line", id: nextLine.id });
         setSelectedLineId(nextLine.id);
         markWorkspaceDirty();
@@ -318,10 +337,13 @@ const PdfMainView = forwardRef(function PdfMainView(
     console.log("[rect] finish:", normalizedRect);
 
     if (normalizedRect.width > 3 && normalizedRect.height > 3) {
+      const timestamp = new Date().toISOString();
       const nextRect = {
         ...normalizedRect,
         id: Date.now(),
         page: currentPage,
+        createdAt: timestamp,
+        updatedAt: timestamp,
         businessProps: getDefaultBusinessProps(finalType),
       };
 
@@ -340,7 +362,7 @@ const PdfMainView = forwardRef(function PdfMainView(
     drawStartRef.current = null;
   }
 
-  function findLeftBorderHitRect(point) {
+  function findBorderHitRect(point) {
     const manualRects = visibleRectangles.map((rect) => ({
       ...rect,
       shapeType: "rect",
@@ -355,7 +377,7 @@ const PdfMainView = forwardRef(function PdfMainView(
     }));
     const hitRects = [...manualRects, ...detectedRects, ...freeRects]
       .reverse()
-      .filter((rect) => isPointOnLeftBorder(point, rect, scale));
+      .filter((rect) => isPointOnRectDragBorder(point, rect, scale));
 
     if (hitRects.length === 0) return null;
 
@@ -440,7 +462,7 @@ const PdfMainView = forwardRef(function PdfMainView(
       return (
         isPointInRectDragHotZone(point, rect) ||
         Boolean(findRectResizeHandle(point, rect)) ||
-        isPointOnLeftBorder(point, rect, scale)
+        isPointOnRectDragBorder(point, rect, scale)
       );
     }
 
@@ -483,7 +505,9 @@ const PdfMainView = forwardRef(function PdfMainView(
   }
 
   function isPointInRectDragHotZone(point, rect) {
-    return isPointInsideBox(point, getRectDragHotZone(rect, scale));
+    return getRectDragHotZones(rect, scale).some((hotZone) =>
+      isPointInsideBox(point, hotZone),
+    );
   }
 
   function findRectResizeHandle(point, rect) {
@@ -520,11 +544,16 @@ const PdfMainView = forwardRef(function PdfMainView(
     }
 
     if (dragState.type === "line") {
-      setLines((oldLines) =>
-        oldLines.map((line) =>
+      setLines((oldLines) => {
+        const nextLines = oldLines.map((line) =>
           line.id === dragState.id ? getDraggedLine(dragState, dx, dy) : line,
-        ),
-      );
+        );
+
+        latestLinesRef.current = nextLines;
+        editedLinesRef.current = nextLines;
+
+        return nextLines;
+      });
     }
   }
 
@@ -703,19 +732,20 @@ const PdfMainView = forwardRef(function PdfMainView(
                 </Layer>
 
                 <Layer>
-                  {selectedRectDragHotZone && (
+                  {selectedRectDragHotZones.map((hotZone) => (
                     <Rect
-                      x={selectedRectDragHotZone.x * scale}
-                      y={selectedRectDragHotZone.y * scale}
-                      width={selectedRectDragHotZone.width * scale}
-                      height={selectedRectDragHotZone.height * scale}
+                      key={hotZone.name}
+                      x={hotZone.x * scale}
+                      y={hotZone.y * scale}
+                      width={hotZone.width * scale}
+                      height={hotZone.height * scale}
                       fill="rgba(0, 128, 255, 0.2)"
                       stroke="rgba(0, 128, 255, 0.65)"
                       strokeWidth={1}
                       dash={[4, 3]}
                       listening={false}
                     />
-                  )}
+                  ))}
 
                   {selectedLineDragHotZone && (
                     <Rect

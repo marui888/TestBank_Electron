@@ -16,8 +16,8 @@
   position: absolute;
   left: 50%;
   top: 50%;
-  width: min(360px, calc(100vw - 32px));
-  max-height: min(520px, calc(100vh - 32px));
+  width: min(460px, calc(100vw - 32px));
+  max-height: min(760px, calc(100vh - 24px));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -42,6 +42,33 @@
   background: rgba(255, 255, 255, 0.45);
   cursor: move;
   user-select: none;
+}
+
+.shape-property-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 10px 0;
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.shape-property-tab-button {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid rgba(80, 80, 80, 0.24);
+  border-bottom-color: rgba(80, 80, 80, 0.36);
+  border-radius: 5px 5px 0 0;
+  background: rgba(255, 255, 255, 0.52);
+  padding: 6px 8px;
+  color: #333;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.shape-property-tab-button.active {
+  border-color: rgba(15, 122, 209, 0.7);
+  background: rgba(255, 255, 255, 0.9);
+  color: #0b5f9e;
 }
 
 .shape-property-editor-title {
@@ -78,7 +105,28 @@
   flex-direction: column;
   gap: 10px;
   padding: 10px;
+  flex: 1;
+  min-height: 0;
   overflow: auto;
+}
+
+.shape-property-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.shape-property-section.section-detail {
+  flex: 1;
+  min-height: 0;
+}
+
+.shape-property-section-title {
+  border-bottom: 1px solid rgba(80, 80, 80, 0.18);
+  padding-bottom: 4px;
+  color: #0b5f9e;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .shape-property-editor-footer {
@@ -123,11 +171,37 @@
   min-width: 0;
 }
 
+.shape-property-single-field-row.note-field-row {
+  flex: 1;
+  min-height: 130px;
+  display: flex;
+}
+
+.shape-property-single-field-row.detail-notes-field-row {
+  flex: 1;
+  min-height: 220px;
+  display: flex;
+}
+
 .shape-property-field-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   align-items: end;
+}
+
+.shape-property-field-row.row-group-business-basic-1,
+.shape-property-field-row.row-group-business-basic-2,
+.shape-property-field-row.row-group-business-basic-3 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.shape-property-field-row .shape-property-input-row {
+  min-width: 0;
+}
+
+.shape-property-field-row .shape-property-clear-field-button {
+  padding: 0 6px;
 }
 
 .shape-property-label {
@@ -199,6 +273,16 @@ textarea.shape-property-control {
   resize: vertical;
 }
 
+.note-field-row .shape-property-field,
+.note-field-row .shape-property-input-row,
+.note-field-row textarea.shape-property-control,
+.detail-notes-field-row .shape-property-field,
+.detail-notes-field-row .shape-property-input-row,
+.detail-notes-field-row textarea.shape-property-control {
+  flex: 1;
+  min-height: 0;
+}
+
 .shape-property-checkbox {
   width: 16px;
   height: 16px;
@@ -229,6 +313,8 @@ textarea.shape-property-control {
 .shape-property-editor-shell.dock-right .shape-property-editor {
   left: auto;
   right: 0;
+  width: 322px;
+  max-width: 322px;
 }
 
 .shape-property-editor-shell.dock-top .shape-property-editor,
@@ -251,4 +337,31 @@ textarea.shape-property-control {
 
 .shape-property-editor-shell.dock-mode .shape-property-editor-header {
   cursor: default;
+}
+
+.shape-property-editor-shell.workspace-bottom-right .shape-property-editor {
+  left: auto;
+  top: auto;
+  right: calc(276px - var(--editor-x));
+  bottom: calc(8px - var(--editor-y));
+  height: min(760px, calc(100vh - 16px));
+  max-height: calc(100vh - 16px);
+  transform: none;
+}
+
+.shape-property-editor-shell.shape-type-rect.workspace-bottom-right
+  .shape-property-editor {
+  height: min(570px, calc(100vh - 16px));
+}
+
+.shape-property-editor-shell.shape-type-rect .note-field-row {
+  flex: 0 0 auto;
+  min-height: 0;
+}
+
+.shape-property-editor-shell.shape-type-rect
+  .note-field-row
+  textarea.shape-property-control {
+  min-height: 70px;
+  max-height: 100px;
 }

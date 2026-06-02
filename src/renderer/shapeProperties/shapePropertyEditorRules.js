@@ -1,4 +1,10 @@
 export function getShapePropertyFieldState(field, draftValue) {
+  if (field.name === "questionId") {
+    return {
+      disabled: draftValue.contentType === "invalid",
+    };
+  }
+
   if (field.name === "solutionNo") {
     return {
       disabled: draftValue.contentType !== "answer",

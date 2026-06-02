@@ -15,6 +15,7 @@ const questionMatchFields = [
     defaultValue: "",
     placeholder: "例如 1.2.3.4",
     clearable: true,
+    rowGroup: "question-type",
   },
   {
     name: "contentType",
@@ -22,15 +23,17 @@ const questionMatchFields = [
     type: "select",
     required: true,
     defaultValue: "stem",
+    rowGroup: "question-type",
     options: [
       { label: "题干", value: "stem" },
       { label: "答案", value: "answer" },
       { label: "分析", value: "analysis" },
+      { label: "无效", value: "invalid" },
     ],
   },
   {
     name: "isMultiRectPart",
-    label: "多个矩形的一部分",
+    label: "一对多",
     type: "checkbox",
     defaultValue: false,
     rowGroup: "multi-rect",
@@ -51,10 +54,55 @@ const questionMatchFields = [
     options: oneToEightOptions,
     rowGroup: "solution-fragment",
   },
+];
+
+const questionBusinessFields = [
   {
-    name: "updatedAt",
-    label: "修改时间",
-    type: "readonly",
+    name: "subject",
+    label: "科目",
+    type: "text",
+    defaultValue: "",
+  },
+  {
+    name: "stage",
+    label: "学段",
+    type: "select",
+    defaultValue: "undetermined",
+    options: [
+      { label: "小学", value: "primary" },
+      { label: "初中", value: "junior" },
+      { label: "高中", value: "senior" },
+      { label: "未定", value: "undetermined" },
+    ],
+  },
+  {
+    name: "chapter",
+    label: "章节",
+    type: "text",
+    defaultValue: "未定",
+  },
+  {
+    name: "grade",
+    label: "年级",
+    type: "text",
+    defaultValue: "未定",
+  },
+  {
+    name: "questionType",
+    label: "题型",
+    type: "select",
+    defaultValue: "undetermined",
+    options: [
+      { label: "选择", value: "choice" },
+      { label: "填空", value: "blank" },
+      { label: "解答", value: "solution" },
+      { label: "未定", value: "undetermined" },
+    ],
+  },
+  {
+    name: "detailNotes",
+    label: "详细属性",
+    type: "textarea",
     defaultValue: "",
   },
 ];
@@ -66,7 +114,9 @@ export const shapePropertySchemas = {
       label: "用途",
       type: "select",
       required: true,
+      defaultValue: "region_partition",
       options: [
+        { label: "区域划分", value: "region_partition" },
         { label: "临时标注", value: "temporary" },
         { label: "人工修正", value: "manual_fix" },
         { label: "待确认", value: "pending" },
@@ -85,11 +135,7 @@ export const shapePropertySchemas = {
       type: "checkbox",
     },
     ...questionMatchFields,
-    {
-      name: "note",
-      label: "备注",
-      type: "textarea",
-    },
+    ...questionBusinessFields,
   ],
   detectedRect: [
     {
@@ -106,11 +152,7 @@ export const shapePropertySchemas = {
       defaultValue: "auto_detected",
     },
     ...questionMatchFields,
-    {
-      name: "note",
-      label: "备注",
-      type: "textarea",
-    },
+    ...questionBusinessFields,
   ],
   line: [
     {

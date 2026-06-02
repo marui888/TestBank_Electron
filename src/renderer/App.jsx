@@ -10,26 +10,38 @@ import ShapePropertyEditor from "./components/ShapePropertyEditor";
 import PdfMainView from "./components/PdfMainView";
 import PdfRegionPreview from "./components/PdfRegionPreview";
 import QuestionBrowseView from "./components/QuestionBrowseView";
+import ClearShapesDialog from "./components/ClearShapesDialog";
 import "./App.css";
-import { getQuestionListForPdfPage, parseSourceMetadataJson } from "./utilities";
-import { getDefaultBusinessProps } from "./shapeProperties/shapePropertyDefaults";
+import {
+  findMetadataNodeByPath,
+  getQuestionListForPdfPage,
+  getSegmentPathFromQuestionId,
+  parseSourceMetadataJson,
+  updateMetadataNodeByPath,
+} from "./utilities";
 import {
   getBusinessPropsFromEditorValue,
   getShapeBusinessProps,
   getShapePropertyEditorSchema,
   updateShapeBusinessPropsInList,
 } from "./shapeProperties/shapePropertyUtils";
+import { getDefaultBusinessProps } from "./shapeProperties/shapePropertyDefaults";
 import {
   findInnermostRectangles,
   formatNumber,
+  getRandomColor,
   getLineDragHotZone,
   getLineResizeHandles,
-  getRandomColor,
-  getRectDragHotZone,
+  getRectDragHotZones,
   getRectResizeHandles,
   toPdfCoordinates,
   toPdfLineCoordinates,
 } from "./pdfWorkspaceGeometry";
+import { reconcileDetectedRectangles } from "./detectedRectReconcile";
+import {
+  applyClearToWorkspace,
+  createClearState,
+} from "./clearShapesUtils";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -112,6 +124,11 @@ export default function App() {
   const [questionItems, setQuestionItems] = useState([]);
   const [questionSegmentRangeMode, setQuestionSegmentRangeMode] =
     useState("default");
+  const [metadataRevision, setMetadataRevision] = useState(0);
+  const [metadataEditorState, setMetadataEditorState] = useState(null);
+  const [questionContextMenuState, setQuestionContextMenuState] =
+    useState(null);
+  const [clearState, setClearState] = useState(null);
   const [matchInteractionRecords, setMatchInteractionRecords] = useState([]);
   const dragStartX = useRef(0);
   const startSecondaryWidth = useRef(DEFAULT_SECONDARY_WIDTH);
@@ -330,6 +347,9 @@ export default function App() {
     setQuestionSegmentInfo(tab?.questionSegmentInfo || null);
     setQuestionItems(tab?.questionItems || []);
     setQuestionSegmentRangeMode(tab?.questionSegmentRangeMode || "default");
+    setMetadataEditorState(null);
+    setQuestionContextMenuState(null);
+    setClearState(null);
     setHasUnsavedChanges(Boolean(tab?.hasUnsavedChanges));
     setSaveStatus(tab?.saveStatus || "");
 
@@ -475,20 +495,24 @@ export default function App() {
     return nextScale;
   }
 
+  function ensureShapeTimestamps(list) {
+    const timestamp = new Date().toISOString();
+
+    return (Array.isArray(list) ? list : []).map((shape) => ({
+      ...shape,
+      createdAt: shape.createdAt || timestamp,
+      updatedAt: shape.updatedAt || shape.createdAt || timestamp,
+    }));
+  }
+
   function getWorkspaceFromPdfJson(pdfJson) {
     const workspace = pdfJson?.workspace || pdfJson || {};
 
     return {
-      rectangles: Array.isArray(workspace.rectangles)
-        ? workspace.rectangles
-        : [],
-      lines: Array.isArray(workspace.lines) ? workspace.lines : [],
-      detectedRectangles: Array.isArray(workspace.detectedRectangles)
-        ? workspace.detectedRectangles
-        : [],
-      freeRectangles: Array.isArray(workspace.freeRectangles)
-        ? workspace.freeRectangles
-        : [],
+      rectangles: ensureShapeTimestamps(workspace.rectangles),
+      lines: ensureShapeTimestamps(workspace.lines),
+      detectedRectangles: ensureShapeTimestamps(workspace.detectedRectangles),
+      freeRectangles: ensureShapeTimestamps(workspace.freeRectangles),
     };
   }
 
@@ -547,6 +571,10 @@ export default function App() {
     setQuestionSegmentInfo(null);
     setQuestionItems([]);
     setQuestionSegmentRangeMode("default");
+    setMetadataRevision(0);
+    setMetadataEditorState(null);
+    setQuestionContextMenuState(null);
+    setClearState(null);
     setHasUnsavedChanges(false);
     setSaveStatus("");
   }
@@ -561,6 +589,10 @@ export default function App() {
       ...getOpenedPdfTab(result, workspace),
       displayPdf: false,
     };
+    setMetadataRevision((oldRevision) => oldRevision + 1);
+    setMetadataEditorState(null);
+    setQuestionContextMenuState(null);
+    setClearState(null);
     pdfDataByTabIdRef.current.set(openedTab.id, result.pdfData);
     addDebugMessage("open:cache-stored", { tabId: openedTab.id });
     updatePdfTabs([...pdfTabsRef.current, openedTab]);
@@ -1047,21 +1079,44 @@ export default function App() {
     });
   }
 
-  function clearCurrentPageShapes() {
-    if (!window.confirm("Clear All ?")) return;
+  function showClearPanel(mode) {
+    setClearState(createClearState(mode, currentPage, totalPages));
+  }
 
-    setRectangles((oldRectangles) =>
-      oldRectangles.filter((rect) => rect.page !== currentPage),
+  function updateClearState(patch) {
+    setClearState((oldState) =>
+      oldState
+        ? {
+            ...oldState,
+            ...patch,
+          }
+        : oldState,
     );
-    setLines((oldLines) =>
-      oldLines.filter((line) => line.page !== currentPage),
+  }
+
+  function applyClearSelection() {
+    if (!clearState) return;
+
+    const result = applyClearToWorkspace(
+      clearState,
+      {
+        rectangles,
+        lines,
+        detectedRectangles,
+        freeRectangles,
+      },
+      totalPages,
     );
-    setDetectedRectangles((oldRectangles) =>
-      oldRectangles.filter((rect) => rect.page !== currentPage),
-    );
-    setFreeRectangles((oldRectangles) =>
-      oldRectangles.filter((rect) => rect.page !== currentPage),
-    );
+
+    if (result.error) {
+      updateClearState({ error: result.error });
+      return;
+    }
+
+    setRectangles(result.workspace.rectangles);
+    setLines(result.workspace.lines);
+    setDetectedRectangles(result.workspace.detectedRectangles);
+    setFreeRectangles(result.workspace.freeRectangles);
     setCurrentRect(null);
     setCurrentLine(null);
     setIsDrawingShape(false);
@@ -1070,6 +1125,7 @@ export default function App() {
     setSelectedRectId(null);
     setSelectedLineId(null);
     setPropertyEditorShape(null);
+    setClearState(null);
     markWorkspaceDirty();
   }
 
@@ -1092,9 +1148,10 @@ export default function App() {
     }
 
     if (selectedShape.type === "line") {
-      setLines((oldLines) =>
-        oldLines.filter((line) => line.id !== selectedShape.id),
-      );
+      const nextLines = lines.filter((line) => line.id !== selectedShape.id);
+
+      setLines(nextLines);
+      refreshDetectedRectanglesFromLines(nextLines, currentPage);
       setSelectedLineId(null);
     }
 
@@ -1103,41 +1160,159 @@ export default function App() {
     markWorkspaceDirty();
   }
 
-  function clearCurrentPageDetectedRectangles() {
-    setDetectedRectangles((oldRectangles) =>
-      oldRectangles.filter((rect) => rect.page !== currentPage),
-    );
+  function findRectanglesFromLines() {
+    refreshDetectedRectanglesFromLines(lines, currentPage);
 
     if (selectedShape?.type === "detectedRect") {
       setSelectedShape(null);
       setSelectedRectId(null);
-      setPropertyEditorShape(null);
     }
-
     markWorkspaceDirty();
   }
 
-  function findRectanglesFromLines() {
-    const nextRects = findInnermostRectangles(visibleLines).map(
-      (rect, index) => ({
-        ...rect,
-        id: `${Date.now()}-${index}`,
-        page: currentPage,
-        fill: getRandomColor(),
-        businessProps: getDefaultBusinessProps("detectedRect"),
-      }),
+  function refreshDetectedRectanglesFromLines(nextLines, page) {
+    const pageLines = nextLines.filter((line) => line.page === page);
+    const nextGeometryRects = findInnermostRectangles(pageLines);
+    const timestamp = new Date().toISOString();
+
+    setDetectedRectangles((oldRectangles) => {
+      const nextPageRects = reconcileDetectedRectangles({
+        oldDetectedRects: oldRectangles,
+        nextGeometryRects,
+        page,
+        updatedAt: timestamp,
+        createDetectedRect: (rect, index) => ({
+          ...rect,
+          id: `${Date.now()}-${index}`,
+          page,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          fill: getRandomColor(),
+          businessProps: getDefaultBusinessProps("detectedRect"),
+        }),
+      });
+
+      return [
+        ...oldRectangles.filter((rect) => rect.page !== page),
+        ...nextPageRects,
+      ];
+    });
+  }
+
+  function openMetadataEditorForQuestion(questionId) {
+    const segmentPath = getSegmentPathFromQuestionId(questionId);
+    const node = findMetadataNodeByPath(sourceMetadata, segmentPath);
+
+    if (!node) {
+      window.alert(`Cannot find metadata segment for ${questionId}`);
+      return;
+    }
+
+    setMetadataEditorState({
+      questionId,
+      segmentPath,
+      segmentId: segmentPath.join("."),
+      total: String(node.total || ""),
+      startQuestionID: String(node.startQuestionID || 1),
+      error: "",
+      saving: false,
+    });
+  }
+
+  function openQuestionContextMenu(event, questionId) {
+    event.preventDefault();
+    setQuestionContextMenuState({
+      questionId,
+      x: event.clientX,
+      y: event.clientY,
+    });
+  }
+
+  function editQuestionContextMenuSegment() {
+    if (!questionContextMenuState) return;
+
+    const { questionId } = questionContextMenuState;
+
+    setQuestionContextMenuState(null);
+    openMetadataEditorForQuestion(questionId);
+  }
+
+  function updateMetadataEditorField(fieldName, nextValue) {
+    setMetadataEditorState((oldState) =>
+      oldState
+        ? {
+            ...oldState,
+            [fieldName]: nextValue,
+            error: "",
+          }
+        : oldState,
+    );
+  }
+
+  function getMetadataEditorNumber(value) {
+    const numericValue = Number(value);
+
+    return Number.isInteger(numericValue) && numericValue > 0
+      ? numericValue
+      : null;
+  }
+
+  async function saveMetadataEditor() {
+    if (!metadataEditorState || !sourceMetadata || !pdfPath) return;
+
+    const total = getMetadataEditorNumber(metadataEditorState.total);
+    const startQuestionID = getMetadataEditorNumber(
+      metadataEditorState.startQuestionID,
     );
 
-    setDetectedRectangles((oldRectangles) => [
-      ...oldRectangles.filter((rect) => rect.page !== currentPage),
-      ...nextRects,
-    ]);
-
-    if (selectedShape?.type === "detectedRect") {
-      setSelectedShape(null);
-      setSelectedRectId(null);
+    if (!total || !startQuestionID) {
+      setMetadataEditorState((oldState) =>
+        oldState
+          ? {
+              ...oldState,
+              error: "total 和 startQuestionID 必须是正整数",
+            }
+          : oldState,
+      );
+      return;
     }
-    markWorkspaceDirty();
+
+    const nextMetadata = updateMetadataNodeByPath(
+      sourceMetadata,
+      metadataEditorState.segmentPath,
+      {
+        total,
+        startQuestionID,
+      },
+    );
+
+    try {
+      setMetadataEditorState((oldState) =>
+        oldState ? { ...oldState, saving: true, error: "" } : oldState,
+      );
+      const result = await window.electronPdf.saveMetaJson(pdfPath, nextMetadata);
+      const normalizedMetadata = parseSourceMetadataJson(
+        result?.metadata || nextMetadata,
+      );
+
+      questionSegmentIdRef.current = null;
+      setPdfMetaJsonPath(result?.metaJsonPath || pdfMetaJsonPath);
+      setSourceMetadata(normalizedMetadata);
+      setMetadataRevision((oldRevision) => oldRevision + 1);
+      setMetadataEditorState(null);
+      setSaveStatus("Metadata saved");
+    } catch (error) {
+      console.error("[metadata] save .metaJson failed:", error);
+      setMetadataEditorState((oldState) =>
+        oldState
+          ? {
+              ...oldState,
+              saving: false,
+              error: "保存 metaJson 失败，请查看控制台",
+            }
+          : oldState,
+      );
+    }
   }
 
   function getShapeByRef(shapeRef) {
@@ -1193,20 +1368,19 @@ export default function App() {
       nextProps,
     );
     const updatedAt = new Date().toISOString();
-    const nextBusinessProps =
-      shapeRef.type === "freeRect" || shapeRef.type === "detectedRect"
-        ? {
-            ...businessProps,
-            updatedAt,
-          }
-        : businessProps;
+    const oldShape = getShapeByRef(shapeRef);
+    const shapePatch = {
+      createdAt: oldShape?.createdAt || updatedAt,
+      updatedAt,
+    };
 
     if (shapeRef.type === "rect") {
       setRectangles((oldRectangles) =>
         updateShapeBusinessPropsInList(
           oldRectangles,
           shapeRef.id,
-          nextBusinessProps,
+          businessProps,
+          shapePatch,
         ),
       );
       markWorkspaceDirty();
@@ -1218,7 +1392,8 @@ export default function App() {
         updateShapeBusinessPropsInList(
           oldRectangles,
           shapeRef.id,
-          nextBusinessProps,
+          businessProps,
+          shapePatch,
         ),
       );
       addMatchInteractionRecord(shapeRef, nextProps, updatedAt);
@@ -1231,7 +1406,8 @@ export default function App() {
         updateShapeBusinessPropsInList(
           oldRectangles,
           shapeRef.id,
-          nextBusinessProps,
+          businessProps,
+          shapePatch,
         ),
       );
       addMatchInteractionRecord(shapeRef, nextProps, updatedAt);
@@ -1241,7 +1417,12 @@ export default function App() {
 
     if (shapeRef.type === "line") {
       setLines((oldLines) =>
-        updateShapeBusinessPropsInList(oldLines, shapeRef.id, nextBusinessProps),
+        updateShapeBusinessPropsInList(
+          oldLines,
+          shapeRef.id,
+          businessProps,
+          shapePatch,
+        ),
       );
       markWorkspaceDirty();
     }
@@ -1399,6 +1580,18 @@ export default function App() {
   const visibleFreeRectangles = freeRectangles.filter(
     (rect) => rect.page === currentPage,
   );
+  const hasCurrentPageShapes =
+    visibleRectangles.length +
+      visibleLines.length +
+      visibleFreeRectangles.length +
+      visibleDetectedRectangles.length >
+    0;
+  const hasWorkspaceShapes =
+    rectangles.length +
+      lines.length +
+      freeRectangles.length +
+      detectedRectangles.length >
+    0;
   const selectedRectangleForInfo =
     selectedShape?.type === "rect"
       ? rectangles.find((rect) => rect.id === selectedRectId) || null
@@ -1431,9 +1624,9 @@ export default function App() {
     selectedShape?.type === "line"
       ? lines.find((line) => line.id === selectedShape.id) || null
       : null;
-  const selectedRectDragHotZone = selectedManualRectForDrag
-    ? getRectDragHotZone(selectedManualRectForDrag, scale)
-    : null;
+  const selectedRectDragHotZones = selectedManualRectForDrag
+    ? getRectDragHotZones(selectedManualRectForDrag, scale)
+    : [];
   const selectedRectResizeHandles = selectedManualRectForDrag
     ? getRectResizeHandles(selectedManualRectForDrag, scale)
     : [];
@@ -1466,6 +1659,12 @@ export default function App() {
         : "floating";
   const propertyEditorDock =
     propertyEditorShape?.type === "line" ? "right" : "none";
+  const propertyEditorPlacement =
+    propertyEditorShape?.type === "rect" ||
+    propertyEditorShape?.type === "freeRect" ||
+    propertyEditorShape?.type === "detectedRect"
+      ? "workspace-bottom-right"
+      : "center";
   const propertyEditorTitle = propertyEditorShape
     ? `${getShapeTypeLabel(propertyEditorShape.type)} Properties`
     : "Properties";
@@ -1516,7 +1715,7 @@ export default function App() {
       questionSegmentRangeMode,
     );
     const nextSegmentId = result.segment?.id || null;
-    const nextSegmentKey = `${nextSegmentId || "none"}:${questionSegmentRangeMode}`;
+    const nextSegmentKey = `${nextSegmentId || "none"}:${questionSegmentRangeMode}:${metadataRevision}`;
 
     if (questionSegmentIdRef.current === nextSegmentKey) return;
 
@@ -1535,7 +1734,7 @@ export default function App() {
         : null,
     );
     setQuestionItems(result.questions);
-  }, [currentPage, sourceMetadata, questionSegmentRangeMode]);
+  }, [currentPage, sourceMetadata, questionSegmentRangeMode, metadataRevision]);
 
   useEffect(() => {
     function handleKeyDown(e) {
@@ -1559,6 +1758,28 @@ export default function App() {
       window.removeEventListener("keydown", handleKeyDown);
     };
   });
+
+  useEffect(() => {
+    if (!questionContextMenuState) return undefined;
+
+    function closeQuestionContextMenu() {
+      setQuestionContextMenuState(null);
+    }
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape") {
+        closeQuestionContextMenu();
+      }
+    }
+
+    window.addEventListener("mousedown", closeQuestionContextMenu);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("mousedown", closeQuestionContextMenu);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [questionContextMenuState]);
 
   return (
     <div className="app-container">
@@ -1684,14 +1905,8 @@ export default function App() {
               <div className="sidebar-section">
                 <div className="sidebar-button-row">
                   <button
-                    disabled={
-                      visibleRectangles.length +
-                        visibleLines.length +
-                        visibleFreeRectangles.length +
-                        visibleDetectedRectangles.length ===
-                      0
-                    }
-                    onClick={clearCurrentPageShapes}
+                    disabled={!hasWorkspaceShapes}
+                    onClick={() => showClearPanel("range")}
                   >
                     Clear{" "}
                   </button>
@@ -1714,10 +1929,10 @@ export default function App() {
                   Find{" "}
                 </button>
                 <button
-                  disabled={visibleDetectedRectangles.length === 0}
-                  onClick={clearCurrentPageDetectedRectangles}
+                  disabled={!hasCurrentPageShapes}
+                  onClick={() => showClearPanel("page")}
                 >
-                  Clear 2
+                  Clear page
                 </button>
                 <div>
                   Detected rectangles: {visibleDetectedRectangles.length}
@@ -1875,8 +2090,8 @@ export default function App() {
                       isActive ? visibleDetectedRectangles : []
                     }
                     visibleFreeRectangles={isActive ? visibleFreeRectangles : []}
-                    selectedRectDragHotZone={
-                      isActive ? selectedRectDragHotZone : null
+                    selectedRectDragHotZones={
+                      isActive ? selectedRectDragHotZones : []
                     }
                     selectedLineDragHotZone={
                       isActive ? selectedLineDragHotZone : null
@@ -1924,6 +2139,9 @@ export default function App() {
                     onPageLoadError={isActive ? handlePageLoadError : noop}
                     onRectSlotDoubleClick={
                       isActive ? handleRectSlotDoubleClick : noop
+                    }
+                    onLinesEdited={
+                      isActive ? refreshDetectedRectanglesFromLines : noop
                     }
                   />
                 </div>
@@ -2126,6 +2344,9 @@ export default function App() {
                           className="question-number-item"
                           key={item.id}
                           title={item.name}
+                          onContextMenu={(event) =>
+                            openQuestionContextMenu(event, item.id)
+                          }
                         >
                           {item.id}
                         </div>
@@ -2183,6 +2404,8 @@ export default function App() {
         }
         mode={propertyEditorMode}
         dock={propertyEditorDock}
+        placement={propertyEditorPlacement}
+        shapeType={propertyEditorShape?.type || ""}
         title={propertyEditorTitle}
         schema={propertyEditorSchema}
         value={propertyEditorValue}
@@ -2192,6 +2415,108 @@ export default function App() {
         }
         onClose={() => setPropertyEditorShape(null)}
       />
+
+      <ClearShapesDialog
+        value={clearState}
+        onChange={updateClearState}
+        onConfirm={applyClearSelection}
+        onCancel={() => setClearState(null)}
+      />
+
+      {questionContextMenuState && (
+        <div
+          className="question-context-menu"
+          style={{
+            left: questionContextMenuState.x,
+            top: questionContextMenuState.y,
+          }}
+          onMouseDown={(event) => event.stopPropagation()}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          <button type="button" onClick={editQuestionContextMenuSegment}>
+            编辑小节元数据
+          </button>
+        </div>
+      )}
+
+      {metadataEditorState && (
+        <div className="metadata-editor-shell">
+          <div
+            className="metadata-editor-backdrop"
+            onMouseDown={() => setMetadataEditorState(null)}
+          />
+          <section className="metadata-editor">
+            <header className="metadata-editor-header">
+              <div>
+                <div className="metadata-editor-title">编辑小节元数据</div>
+                <div className="metadata-editor-subtitle">
+                  {metadataEditorState.segmentId} / {metadataEditorState.questionId}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="metadata-editor-close-button"
+                onClick={() => setMetadataEditorState(null)}
+              >
+                ×
+              </button>
+            </header>
+            <div className="metadata-editor-body">
+              <label className="metadata-editor-field">
+                <span>startQuestionID</span>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={metadataEditorState.startQuestionID}
+                  disabled={metadataEditorState.saving}
+                  onChange={(event) =>
+                    updateMetadataEditorField(
+                      "startQuestionID",
+                      event.target.value,
+                    )
+                  }
+                />
+              </label>
+              <label className="metadata-editor-field">
+                <span>total</span>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={metadataEditorState.total}
+                  disabled={metadataEditorState.saving}
+                  onChange={(event) =>
+                    updateMetadataEditorField("total", event.target.value)
+                  }
+                />
+              </label>
+              {metadataEditorState.error && (
+                <div className="metadata-editor-error">
+                  {metadataEditorState.error}
+                </div>
+              )}
+            </div>
+            <footer className="metadata-editor-footer">
+              <button
+                type="button"
+                disabled={metadataEditorState.saving}
+                onClick={() => setMetadataEditorState(null)}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="primary"
+                disabled={metadataEditorState.saving}
+                onClick={saveMetadataEditor}
+              >
+                {metadataEditorState.saving ? "保存中..." : "保存"}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
 
       <div className="debug-overlay">
         <div className="debug-overlay-title">PDF debug</div>

@@ -54,7 +54,11 @@ export function getQuestionRegionsById(
   const matchedRegions = getBusinessRegions({
     freeRectangles,
     detectedRectangles,
-  }).filter((region) => getBusinessProps(region).questionId === questionId);
+  }).filter((region) => {
+    const props = getBusinessProps(region);
+
+    return props.contentType !== "invalid" && props.questionId === questionId;
+  });
 
   const stemRegions = cloneAndSortRegions(
     matchedRegions.filter(

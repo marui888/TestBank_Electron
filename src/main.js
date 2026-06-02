@@ -166,6 +166,22 @@ function registerIpcHandlers() {
     };
   });
 
+  ipcMain.handle('pdf:saveMetaJson', async (_event, pdfPath, data) => {
+    const metaJsonPath = getMetaJsonPath(pdfPath);
+    const nextData = {
+      ...data,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await fs.writeFile(metaJsonPath, JSON.stringify(nextData, null, 2), 'utf8');
+
+    return {
+      metaJsonPath,
+      metadata: nextData,
+      savedAt: nextData.updatedAt,
+    };
+  });
+
   ipcMain.handle('pdf:confirmCloseDirty', async () => {
     const result = await dialog.showMessageBox(mainWindow, {
       type: 'warning',

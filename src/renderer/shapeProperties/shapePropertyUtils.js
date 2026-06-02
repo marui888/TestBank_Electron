@@ -4,37 +4,123 @@ import { shapePropertySchemas } from "./shapePropertySchemas";
 const editorOnlyFieldsByShapeType = {
   freeRect: [
     {
-      name: "isLastRect",
-      label: "最后矩形",
-      type: "checkbox",
-      defaultValue: false,
-      rowGroup: "multi-rect",
+      name: "questionIdReadonly",
+      label: "题目ID",
+      type: "readonly",
+      defaultValue: "",
+      viewTab: "business",
+      viewSection: "basic",
+      mirrorOf: "questionId",
     },
-  ],
-  detectedRect: [
     {
       name: "isLastRect",
       label: "最后矩形",
       type: "checkbox",
       defaultValue: false,
       rowGroup: "multi-rect",
+      viewTab: "geometry",
+    },
+  ],
+  detectedRect: [
+    {
+      name: "questionIdReadonly",
+      label: "题目ID",
+      type: "readonly",
+      defaultValue: "",
+      viewTab: "business",
+      viewSection: "basic",
+      mirrorOf: "questionId",
+    },
+    {
+      name: "isLastRect",
+      label: "最后矩形",
+      type: "checkbox",
+      defaultValue: false,
+      rowGroup: "multi-rect",
+      viewTab: "geometry",
     },
   ],
 };
 
+const businessShapeTypes = new Set(["freeRect", "detectedRect"]);
+const businessTabFieldNames = new Set([
+  "subject",
+  "stage",
+  "chapter",
+  "grade",
+  "questionType",
+  "detailNotes",
+]);
+const basicBusinessFieldNames = new Set([
+  "questionIdReadonly",
+  "subject",
+  "stage",
+  "chapter",
+  "grade",
+  "questionType",
+]);
+
+const businessFieldRowGroups = {
+  questionIdReadonly: "business-basic-1",
+  stage: "business-basic-1",
+  grade: "business-basic-2",
+  chapter: "business-basic-2",
+  subject: "business-basic-3",
+  questionType: "business-basic-3",
+};
+
+const businessFieldViewOrders = {
+  questionIdReadonly: 10,
+  stage: 20,
+  grade: 30,
+  chapter: 40,
+  subject: 50,
+  questionType: 60,
+  detailNotes: 70,
+};
+
+function withBusinessRectViewTab(shapeType, field) {
+  if (!businessShapeTypes.has(shapeType)) return field;
+  const isBusinessField =
+    businessTabFieldNames.has(field.name) || field.viewTab === "business";
+
+  return {
+    ...field,
+    viewTab: field.viewTab || (isBusinessField ? "business" : "geometry"),
+    viewSection: isBusinessField
+      ? basicBusinessFieldNames.has(field.name)
+        ? "basic"
+        : "detail"
+      : field.viewSection,
+    rowGroup: businessFieldRowGroups[field.name] || field.rowGroup,
+    viewOrder: businessFieldViewOrders[field.name],
+  };
+}
+
 export function getShapeBusinessProps(shapeType, shape) {
   const businessProps = shape?.businessProps || {};
+  const legacyNotePatch =
+    businessShapeTypes.has(shapeType) &&
+    !businessProps.detailNotes &&
+    businessProps.note
+      ? { detailNotes: businessProps.note }
+      : {};
 
   return {
     ...getDefaultBusinessProps(shapeType),
     ...businessProps,
+    ...legacyNotePatch,
     questionId: businessProps.questionId || businessProps.questionNo || "",
   };
 }
 
 export function getShapePropertyEditorSchema(shapeType) {
-  const businessSchema = shapePropertySchemas[shapeType] || [];
-  const editorOnlyFields = editorOnlyFieldsByShapeType[shapeType] || [];
+  const businessSchema = (shapePropertySchemas[shapeType] || []).map((field) =>
+    withBusinessRectViewTab(shapeType, field),
+  );
+  const editorOnlyFields = (editorOnlyFieldsByShapeType[shapeType] || []).map(
+    (field) => withBusinessRectViewTab(shapeType, field),
+  );
 
   if (editorOnlyFields.length === 0) return businessSchema;
 
@@ -65,18 +151,27 @@ export function getBusinessPropsFromEditorValue(shapeType, editorValue) {
   );
 }
 
-export function updateShapeBusinessPropsInList(list, shapeId, nextProps) {
-  return list.map((shape) =>
-    shape.id === shapeId
+export function updateShapeBusinessPropsInList(
+  list,
+  shapeId,
+  nextProps,
+  shapePatch = {},
+) {
+  return list.map((shape) => {
+    const { updatedAt, createdAt, ...oldBusinessProps } =
+      shape.businessProps || {};
+
+    return shape.id === shapeId
       ? {
           ...shape,
+          ...shapePatch,
           businessProps: {
-            ...shape.businessProps,
+            ...oldBusinessProps,
             ...nextProps,
           },
         }
-      : shape,
-  );
+      : shape;
+  });
 }
 
 export function isEmptyFieldValue(field, value) {

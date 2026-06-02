@@ -1,3 +1,6 @@
+## 打包报错
+$env:ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
+
 ## 打开大型PDF，UI冻结。
 
 问题根因基本清楚了：
