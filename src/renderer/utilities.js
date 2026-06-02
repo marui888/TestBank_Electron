@@ -67,6 +67,9 @@ export function parseSourceMetadataJson(rawText) {
     schemaVersion: metadata.schemaVersion || 1,
     name: metadata.name || "",
     type: metadata.type || "",
+    documentRole: metadata.documentRole || "",
+    answerPdfFileName: metadata.answerPdfFileName || "",
+    stemPdfFileName: metadata.stemPdfFileName || "",
     pageGap: Number(metadata.pageGap || 0),
     segmentNames: Array.isArray(metadata.segmentNames)
       ? metadata.segmentNames
@@ -82,6 +85,9 @@ export function serializeSourceMetadata(metadata) {
     schemaVersion: metadata?.schemaVersion || 1,
     name: metadata?.name || "",
     type: metadata?.type || "",
+    documentRole: metadata?.documentRole || "",
+    answerPdfFileName: metadata?.answerPdfFileName || "",
+    stemPdfFileName: metadata?.stemPdfFileName || "",
     pageGap: Number(metadata?.pageGap || 0),
     segmentNames: Array.isArray(metadata?.segmentNames)
       ? metadata.segmentNames

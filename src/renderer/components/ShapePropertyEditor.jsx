@@ -5,6 +5,9 @@ import {
   faCircleExclamation,
   faXmark,
 } from "@fortawesome/free-solid-svg-icons";
+import DetailPropertyTextarea from "./DetailPropertyTextarea";
+import { normalizeDetailNotes } from "../detailProperties/detailPropertyNotesNormalizer";
+import { highSchoolMathDetailProperties } from "../metadata/highSchoolMathDetailProperties";
 import { getShapePropertyFieldState } from "../shapeProperties/shapePropertyEditorRules";
 import { validateBusinessProps } from "../shapeProperties/shapePropertyUtils";
 import "./ShapePropertyEditor.css";
@@ -121,6 +124,20 @@ function getFieldRowClassName(fields) {
   }
 
   return classNames.join(" ");
+}
+
+function normalizeDraftBeforeSave(draftValue) {
+  if (!Object.prototype.hasOwnProperty.call(draftValue || {}, "detailNotes")) {
+    return draftValue;
+  }
+
+  return {
+    ...draftValue,
+    detailNotes: normalizeDetailNotes(
+      draftValue.detailNotes,
+      highSchoolMathDetailProperties,
+    ),
+  };
 }
 
 export default function ShapePropertyEditor({
@@ -264,8 +281,11 @@ export default function ShapePropertyEditor({
   function saveDraft() {
     if (hasErrors) return false;
 
-    onSave?.(draftValue);
-    setSavedValue(draftValue);
+    const normalizedDraftValue = normalizeDraftBeforeSave(draftValue);
+
+    onSave?.(normalizedDraftValue);
+    setDraftValue(normalizedDraftValue);
+    setSavedValue(normalizedDraftValue);
     return true;
   }
 
@@ -465,6 +485,19 @@ function renderFieldInput(field, fieldId, value, disabled, onChange) {
   }
 
   if (field.type === "textarea") {
+    if (field.name === "detailNotes") {
+      return (
+        <DetailPropertyTextarea
+          id={fieldId}
+          className="shape-property-control"
+          disabled={disabled}
+          value={value}
+          placeholder={field.placeholder}
+          onChange={onChange}
+        />
+      );
+    }
+
     return (
       <textarea
         id={fieldId}

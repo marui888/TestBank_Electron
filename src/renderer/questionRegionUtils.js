@@ -34,31 +34,51 @@ function cloneAndSortRegions(regions) {
   return [...regions].sort(compareRegions);
 }
 
-function getBusinessRegions({ freeRectangles = [], detectedRectangles = [] }) {
+function getSourceInfo(source = {}) {
+  return {
+    sourceRole: source.role || "current",
+    sourceTabId: source.tabId || "",
+    sourcePdfPath: source.pdfPath || "",
+    sourcePdfName: source.pdfName || "",
+  };
+}
+
+function getBusinessRegions({
+  freeRectangles = [],
+  detectedRectangles = [],
+  source = {},
+}) {
+  const sourceInfo = getSourceInfo(source);
+
   return [
     ...freeRectangles.map((region) => ({
       ...region,
       shapeType: "freeRect",
+      ...sourceInfo,
     })),
     ...detectedRectangles.map((region) => ({
       ...region,
       shapeType: "detectedRect",
+      ...sourceInfo,
     })),
   ];
 }
 
-export function getQuestionRegionsById(
-  questionId,
-  { freeRectangles = [], detectedRectangles = [] } = {},
-) {
-  const matchedRegions = getBusinessRegions({
-    freeRectangles,
-    detectedRectangles,
-  }).filter((region) => {
+function getMatchedQuestionRegions(questionId, sources) {
+  return sources.flatMap((source) =>
+    getBusinessRegions({
+      freeRectangles: source.freeRectangles,
+      detectedRectangles: source.detectedRectangles,
+      source,
+    }),
+  ).filter((region) => {
     const props = getBusinessProps(region);
 
     return props.contentType !== "invalid" && props.questionId === questionId;
   });
+}
+
+function getQuestionRegionsFromMatched(questionId, matchedRegions) {
 
   const stemRegions = cloneAndSortRegions(
     matchedRegions.filter(
@@ -92,4 +112,28 @@ export function getQuestionRegionsById(
     answerGroups,
     analysisRegions,
   };
+}
+
+export function getQuestionRegionsById(
+  questionId,
+  { freeRectangles = [], detectedRectangles = [] } = {},
+) {
+  const matchedRegions = getMatchedQuestionRegions(questionId, [
+    {
+      role: "current",
+      freeRectangles,
+      detectedRectangles,
+    },
+  ]);
+
+  return getQuestionRegionsFromMatched(questionId, matchedRegions);
+}
+
+export function getQuestionRegionsByIdAcrossSources(questionId, sources = []) {
+  const matchedRegions = getMatchedQuestionRegions(
+    questionId,
+    Array.isArray(sources) ? sources : [],
+  );
+
+  return getQuestionRegionsFromMatched(questionId, matchedRegions);
 }

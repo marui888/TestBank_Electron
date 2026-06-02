@@ -370,15 +370,25 @@ body,
 
 .question-number-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: 6px;
   margin-bottom: 4px;
 }
 
-.question-number-header .sidebar-title {
+.question-number-title-stack {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.question-number-title-stack .sidebar-title {
   margin: 0;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .question-range-select {
@@ -386,6 +396,23 @@ body,
   min-width: 0;
   height: 22px;
   font-size: 11px;
+}
+
+.file-metadata-settings-button {
+  flex: 0 0 auto;
+  height: 22px;
+  border: 1px solid #b8b8b8;
+  border-radius: 4px;
+  background: #f4f4f4;
+  padding: 0 6px;
+  color: #333;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.file-metadata-settings-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .question-segment-meta {
@@ -524,13 +551,18 @@ body,
   color: #333;
 }
 
-.metadata-editor-field input {
+.metadata-editor-field input,
+.metadata-editor-field select {
   height: 28px;
   box-sizing: border-box;
   border: 1px solid #b8b8b8;
   border-radius: 4px;
   padding: 4px 7px;
   font-size: 13px;
+}
+
+.file-metadata-editor {
+  width: 360px;
 }
 
 .metadata-editor-error {
@@ -611,6 +643,15 @@ body,
   font-size: 16px;
   font-weight: 700;
   color: #222;
+}
+
+.question-browse-source-summary {
+  max-width: 420px;
+  overflow: hidden;
+  color: #555;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .question-browse-title-block {
@@ -723,6 +764,7 @@ body,
   flex: 1;
   min-height: 0;
   display: flex;
+  flex-direction: column;
   align-items: flex-start;
   justify-content: center;
   overflow: auto;
@@ -732,6 +774,23 @@ body,
 
 .question-browse-region-view {
   width: 100%;
+}
+
+.question-browse-related-status {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 8px;
+  border: 1px solid #d8d0a8;
+  border-radius: 4px;
+  background: #fff8d8;
+  padding: 6px 8px;
+  color: #6b5300;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.question-browse-related-status .error {
+  color: #9b1c12;
 }
 
 .question-answer-tab-list {
@@ -1010,6 +1069,21 @@ body,
 .pdf-composite-region-canvas {
   display: block;
   background: #fff;
+}
+
+.pdf-composite-region-missing-doc {
+  width: 100%;
+  min-height: 80px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed #cfcfcf;
+  background: #fffaf0;
+  color: #775700;
+  padding: 8px;
+  font-size: 12px;
+  text-align: center;
 }
 
 .pdf-composite-region-controls {

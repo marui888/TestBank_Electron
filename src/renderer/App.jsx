@@ -17,8 +17,10 @@ import {
   getQuestionListForPdfPage,
   getSegmentPathFromQuestionId,
   parseSourceMetadataJson,
+  serializeSourceMetadata,
   updateMetadataNodeByPath,
 } from "./utilities";
+import { getRelatedPdfResolution } from "./relatedPdfUtils";
 import {
   getBusinessPropsFromEditorValue,
   getShapeBusinessProps,
@@ -53,6 +55,7 @@ pdfjs.GlobalWorkerOptions.cMapPacked = true;
 
 export default function App() {
   const DEFAULT_SECONDARY_WIDTH = 260;
+  const MAX_AUTO_OPEN_RELATED_PDFS = 8;
   const leftTabs = [
     { id: "tools", label: "PDF Tools", icon: faFilePdf },
     { id: "layers", label: "Layers", icon: faLayerGroup },
@@ -79,6 +82,7 @@ export default function App() {
   const [saveStatus, setSaveStatus] = useState("");
   const [debugMessages, setDebugMessages] = useState([]);
   const [pdfDocState, setPdfDocState] = useState(null);
+  const [pdfDocsByTabId, setPdfDocsByTabId] = useState(new Map());
 
   const [currentPage, setCurrentPage] = useState(1);
   const [pageInputValue, setPageInputValue] = useState("1");
@@ -98,6 +102,9 @@ export default function App() {
   const currentPdfTabSnapshotRef = useRef(null);
   const pdfDataByTabIdRef = useRef(new Map());
   const pdfObjectUrlRef = useRef("");
+  const pendingRelatedOpenPathsRef = useRef(new Set());
+  const skippedRelatedOpenPathsRef = useRef(new Set());
+  const pendingPdfDocLoadTabIdsRef = useRef(new Set());
 
   const [currentRect, setCurrentRect] = useState(null);
   const [currentLine, setCurrentLine] = useState(null);
@@ -126,6 +133,7 @@ export default function App() {
     useState("default");
   const [metadataRevision, setMetadataRevision] = useState(0);
   const [metadataEditorState, setMetadataEditorState] = useState(null);
+  const [fileMetadataEditorState, setFileMetadataEditorState] = useState(null);
   const [questionContextMenuState, setQuestionContextMenuState] =
     useState(null);
   const [clearState, setClearState] = useState(null);
@@ -348,6 +356,7 @@ export default function App() {
     setQuestionItems(tab?.questionItems || []);
     setQuestionSegmentRangeMode(tab?.questionSegmentRangeMode || "default");
     setMetadataEditorState(null);
+    setFileMetadataEditorState(null);
     setQuestionContextMenuState(null);
     setClearState(null);
     setHasUnsavedChanges(Boolean(tab?.hasUnsavedChanges));
@@ -456,6 +465,16 @@ export default function App() {
     if (!pdfObjectUrl) return null;
     return pdfObjectUrl;
   }, [pdfObjectUrl]);
+  const relatedPdfResolution = useMemo(
+    () =>
+      getRelatedPdfResolution({
+        currentPdfPath: pdfPath,
+        sourceMetadata,
+        pdfTabs,
+        activePdfTabId,
+      }),
+    [pdfPath, sourceMetadata, pdfTabs, activePdfTabId],
+  );
 
   function calculateFitScale(pdfWidth, pdfHeight) {
     const mainView = getActiveMainView();
@@ -542,6 +561,11 @@ export default function App() {
     setDisplayPdf(false);
     clearPdfObjectUrl();
     setPdfDocState(null);
+    setPdfDocsByTabId((oldDocsByTabId) => {
+      oldDocsByTabId.forEach((pdfDoc) => pdfDoc?.destroy?.());
+      return new Map();
+    });
+    pendingPdfDocLoadTabIdsRef.current.clear();
     setPdfName("");
     setPdfPath("");
     setPdfJsonPath("");
@@ -555,6 +579,7 @@ export default function App() {
     setScale(1);
     setFitScale(1);
     setAutoScaleDone(false);
+    setFileMetadataEditorState(null);
     setCurrentRect(null);
     setCurrentLine(null);
     setIsDrawingShape(false);
@@ -579,10 +604,31 @@ export default function App() {
     setSaveStatus("");
   }
 
-  function applyOpenedPdf(result) {
+  function getPdfJsData(sourceData) {
+    if (!sourceData) return null;
+
+    if (sourceData instanceof ArrayBuffer) {
+      return sourceData.slice(0);
+    }
+
+    if (ArrayBuffer.isView(sourceData)) {
+      return sourceData.buffer.slice(
+        sourceData.byteOffset,
+        sourceData.byteOffset + sourceData.byteLength,
+      );
+    }
+
+    return sourceData;
+  }
+
+  function applyOpenedPdf(result, options = {}) {
+    const { activate = true, reason = "open" } = options;
+
     addDebugMessage("open:apply:start", {
       name: result.pdfName,
       size: formatBytes(getPdfDataByteLength(result.pdfData)),
+      reason,
+      activate,
     });
     const workspace = getWorkspaceFromPdfJson(result.pdfJson);
     const openedTab = {
@@ -591,12 +637,33 @@ export default function App() {
     };
     setMetadataRevision((oldRevision) => oldRevision + 1);
     setMetadataEditorState(null);
+    setFileMetadataEditorState(null);
     setQuestionContextMenuState(null);
     setClearState(null);
     pdfDataByTabIdRef.current.set(openedTab.id, result.pdfData);
     addDebugMessage("open:cache-stored", { tabId: openedTab.id });
     updatePdfTabs([...pdfTabsRef.current, openedTab]);
     setRecentFiles(result.recentFiles || []);
+
+    if (!activate) {
+      window.setTimeout(() => {
+        const nextTab = {
+          ...openedTab,
+          displayPdf: true,
+        };
+
+        addDebugMessage("open:background-display-ready", {
+          tabId: openedTab.id,
+          reason,
+        });
+        pdfTabsRef.current = pdfTabsRef.current.map((tab) =>
+          tab.id === nextTab.id ? nextTab : tab,
+        );
+        setPdfTabs(pdfTabsRef.current);
+      }, 50);
+      return openedTab;
+    }
+
     setActivePdfTabId(openedTab.id);
     hydratePdfTab(openedTab, { hydratePdfFile: false });
     addDebugMessage("open:hydrated-light", { tabId: openedTab.id });
@@ -619,6 +686,8 @@ export default function App() {
         );
       }, 50);
     }, 50);
+
+    return openedTab;
   }
 
   async function saveCurrentPdfJson() {
@@ -658,6 +727,15 @@ export default function App() {
       nextTabs[currentIndex] || nextTabs[currentIndex - 1] || null;
 
     pdfDataByTabIdRef.current.delete(activePdfTabId);
+    pendingPdfDocLoadTabIdsRef.current.delete(activePdfTabId);
+    setPdfDocsByTabId((oldDocsByTabId) => {
+      const pdfDoc = oldDocsByTabId.get(activePdfTabId);
+      pdfDoc?.destroy?.();
+
+      const nextDocsByTabId = new Map(oldDocsByTabId);
+      nextDocsByTabId.delete(activePdfTabId);
+      return nextDocsByTabId;
+    });
     updatePdfTabs(nextTabs);
 
     if (nextActiveTab) {
@@ -762,6 +840,64 @@ export default function App() {
     }
   }
 
+  async function autoOpenRelatedPdf(relatedFile) {
+    if (!window.electronPdf || !relatedFile?.pdfPath) return;
+
+    const pdfPathToOpen = relatedFile.pdfPath;
+
+    if (findOpenedPdfTabByPath(pdfPathToOpen)) return;
+    if (pendingRelatedOpenPathsRef.current.has(pdfPathToOpen)) return;
+    if (skippedRelatedOpenPathsRef.current.has(pdfPathToOpen)) return;
+
+    if (pdfTabsRef.current.length >= MAX_AUTO_OPEN_RELATED_PDFS) {
+      const shouldOpen = window.confirm(
+        `当前已打开 PDF 较多，是否打开关联文件？\n${relatedFile.fileName}`,
+      );
+
+      if (!shouldOpen) {
+        skippedRelatedOpenPathsRef.current.add(pdfPathToOpen);
+        setSaveStatus(`Skipped related PDF: ${relatedFile.fileName}`);
+        return;
+      }
+    }
+
+    pendingRelatedOpenPathsRef.current.add(pdfPathToOpen);
+    setSaveStatus(`Opening related PDF: ${relatedFile.fileName}`);
+
+    try {
+      addDebugMessage("related-open:start", {
+        role: relatedFile.role,
+        pdfPath: pdfPathToOpen,
+      });
+      const result = await window.electronPdf.openRecentPdf(pdfPathToOpen);
+
+      if (!result?.pdfPath) {
+        throw new Error("Open related PDF returned no pdfPath.");
+      }
+
+      if (findOpenedPdfTabByPath(result?.pdfPath)) return;
+
+      applyOpenedPdf(result, {
+        activate: false,
+        reason: "related",
+      });
+      setSaveStatus(`Related PDF opened: ${relatedFile.fileName}`);
+      addDebugMessage("related-open:success", {
+        role: relatedFile.role,
+        pdfPath: pdfPathToOpen,
+      });
+    } catch (error) {
+      console.error("[related-pdf] open failed:", error);
+      addDebugMessage("related-open:error", {
+        pdfPath: pdfPathToOpen,
+        error: error?.message || String(error),
+      });
+      setSaveStatus(`Open related failed: ${relatedFile.fileName}`);
+    } finally {
+      pendingRelatedOpenPathsRef.current.delete(pdfPathToOpen);
+    }
+  }
+
   useEffect(() => {
     if (!window.electronPdf) return;
 
@@ -772,6 +908,88 @@ export default function App() {
         console.error("[file] load recent files failed:", error);
       });
   }, []);
+
+  useEffect(() => {
+    skippedRelatedOpenPathsRef.current.clear();
+  }, [
+    pdfPath,
+    sourceMetadata?.documentRole,
+    sourceMetadata?.answerPdfFileName,
+    sourceMetadata?.stemPdfFileName,
+  ]);
+
+  useEffect(() => {
+    if (workspaceMode !== "entityBrowse") return;
+    if (!browseQuestionId) return;
+    if (!pdfPath || !sourceMetadata) return;
+
+    if (relatedPdfResolution.errors.length > 0) {
+      setSaveStatus(relatedPdfResolution.errors[0]);
+      return;
+    }
+
+    relatedPdfResolution.missingRelatedFiles.forEach((relatedFile) => {
+      autoOpenRelatedPdf(relatedFile);
+    });
+  }, [
+    workspaceMode,
+    browseQuestionId,
+    pdfPath,
+    sourceMetadata,
+    pdfTabs,
+    activePdfTabId,
+    metadataRevision,
+    relatedPdfResolution,
+  ]);
+
+  useEffect(() => {
+    if (workspaceMode !== "entityBrowse") return;
+
+    relatedPdfResolution.readySources.forEach((source) => {
+      const tabId = source.tabId;
+
+      if (!tabId) return;
+      if (pdfDocsByTabId.has(tabId)) return;
+      if (pendingPdfDocLoadTabIdsRef.current.has(tabId)) return;
+
+      const sourceData = pdfDataByTabIdRef.current.get(tabId);
+      const pdfData = getPdfJsData(sourceData);
+
+      if (!pdfData) return;
+
+      pendingPdfDocLoadTabIdsRef.current.add(tabId);
+
+      pdfjs
+        .getDocument({ data: pdfData })
+        .promise.then((pdfDoc) => {
+          if (!pdfTabsRef.current.some((tab) => tab.id === tabId)) {
+            pdfDoc?.destroy?.();
+            return;
+          }
+
+          setPdfDocsByTabId((oldDocsByTabId) => {
+            if (oldDocsByTabId.has(tabId)) {
+              pdfDoc?.destroy?.();
+              return oldDocsByTabId;
+            }
+
+            const nextDocsByTabId = new Map(oldDocsByTabId);
+            nextDocsByTabId.set(tabId, pdfDoc);
+            return nextDocsByTabId;
+          });
+        })
+        .catch((error) => {
+          console.error("[related-pdf] load pdfDoc failed:", error);
+          addDebugMessage("related-pdf-doc:error", {
+            tabId,
+            error: error?.message || String(error),
+          });
+        })
+        .finally(() => {
+          pendingPdfDocLoadTabIdsRef.current.delete(tabId);
+        });
+    });
+  }, [workspaceMode, relatedPdfResolution, pdfDocsByTabId]);
 
   useEffect(
     () => () => {
@@ -811,6 +1029,13 @@ export default function App() {
     addDebugMessage("document:load-success", { totalPages: pdf.numPages });
 
     setPdfDocState(pdf);
+    if (activePdfTabId) {
+      setPdfDocsByTabId((oldDocsByTabId) => {
+        const nextDocsByTabId = new Map(oldDocsByTabId);
+        nextDocsByTabId.set(activePdfTabId, pdf);
+        return nextDocsByTabId;
+      });
+    }
     setTotalPages(pdf.numPages);
     if (totalPages <= 0) {
       setCurrentPage(1);
@@ -1219,6 +1444,18 @@ export default function App() {
     });
   }
 
+  function openFileMetadataEditor() {
+    if (!sourceMetadata || !pdfPath) return;
+
+    setFileMetadataEditorState({
+      documentRole: sourceMetadata.documentRole || "",
+      answerPdfFileName: sourceMetadata.answerPdfFileName || "",
+      stemPdfFileName: sourceMetadata.stemPdfFileName || "",
+      error: "",
+      saving: false,
+    });
+  }
+
   function openQuestionContextMenu(event, questionId) {
     event.preventDefault();
     setQuestionContextMenuState({
@@ -1239,6 +1476,18 @@ export default function App() {
 
   function updateMetadataEditorField(fieldName, nextValue) {
     setMetadataEditorState((oldState) =>
+      oldState
+        ? {
+            ...oldState,
+            [fieldName]: nextValue,
+            error: "",
+          }
+        : oldState,
+    );
+  }
+
+  function updateFileMetadataEditorField(fieldName, nextValue) {
+    setFileMetadataEditorState((oldState) =>
       oldState
         ? {
             ...oldState,
@@ -1304,6 +1553,69 @@ export default function App() {
     } catch (error) {
       console.error("[metadata] save .metaJson failed:", error);
       setMetadataEditorState((oldState) =>
+        oldState
+          ? {
+              ...oldState,
+              saving: false,
+              error: "保存 metaJson 失败，请查看控制台",
+            }
+          : oldState,
+      );
+    }
+  }
+
+  function validateFileMetadataEditor(state) {
+    if (
+      state.documentRole === "stemOnly" &&
+      !/答案|answer/i.test(state.answerPdfFileName || "")
+    ) {
+      return "只有题干时，答案 PDF 文件名必须包含“答案”或“answer”。";
+    }
+
+    if (state.documentRole === "answerOnly" && !state.stemPdfFileName.trim()) {
+      return "只有答案时，需要填写题干 PDF 文件名。";
+    }
+
+    return "";
+  }
+
+  async function saveFileMetadataEditor() {
+    if (!fileMetadataEditorState || !sourceMetadata || !pdfPath) return;
+
+    const error = validateFileMetadataEditor(fileMetadataEditorState);
+
+    if (error) {
+      setFileMetadataEditorState((oldState) =>
+        oldState ? { ...oldState, error } : oldState,
+      );
+      return;
+    }
+
+    const nextMetadata = serializeSourceMetadata({
+      ...sourceMetadata,
+      documentRole: fileMetadataEditorState.documentRole,
+      answerPdfFileName: fileMetadataEditorState.answerPdfFileName.trim(),
+      stemPdfFileName: fileMetadataEditorState.stemPdfFileName.trim(),
+    });
+
+    try {
+      setFileMetadataEditorState((oldState) =>
+        oldState ? { ...oldState, saving: true, error: "" } : oldState,
+      );
+      const result = await window.electronPdf.saveMetaJson(pdfPath, nextMetadata);
+      const normalizedMetadata = parseSourceMetadataJson(
+        result?.metadata || nextMetadata,
+      );
+
+      questionSegmentIdRef.current = null;
+      setPdfMetaJsonPath(result?.metaJsonPath || pdfMetaJsonPath);
+      setSourceMetadata(normalizedMetadata);
+      setMetadataRevision((oldRevision) => oldRevision + 1);
+      setFileMetadataEditorState(null);
+      setSaveStatus("Metadata saved");
+    } catch (error) {
+      console.error("[metadata] save file .metaJson failed:", error);
+      setFileMetadataEditorState((oldState) =>
         oldState
           ? {
               ...oldState,
@@ -2032,10 +2344,15 @@ export default function App() {
         >
           <QuestionBrowseView
             pdfDoc={pdfDocState}
+            pdfDocsByTabId={pdfDocsByTabId}
             questionId={browseQuestionId}
             onQuestionIdChange={setBrowseQuestionId}
             freeRectangles={freeRectangles}
             detectedRectangles={detectedRectangles}
+            sources={relatedPdfResolution.readySources}
+            missingRelatedFiles={relatedPdfResolution.missingRelatedFiles}
+            relatedErrors={relatedPdfResolution.errors}
+            relatedWarnings={relatedPdfResolution.warnings}
             onBack={() => setWorkspaceMode("annotate")}
           />
         </div>
@@ -2293,7 +2610,17 @@ export default function App() {
 
               <div className="sidebar-section question-number-section">
                 <div className="question-number-header">
-                  <div className="sidebar-title">QuesID</div>
+                  <div className="question-number-title-stack">
+                    <div className="sidebar-title">QuesID</div>
+                    <button
+                      type="button"
+                      className="file-metadata-settings-button"
+                      disabled={!sourceMetadata || Boolean(sourceMetadataError)}
+                      onClick={openFileMetadataEditor}
+                    >
+                      PDF设置
+                    </button>
+                  </div>
                   <select
                     className="question-range-select"
                     value={questionSegmentRangeMode}
@@ -2512,6 +2839,103 @@ export default function App() {
                 onClick={saveMetadataEditor}
               >
                 {metadataEditorState.saving ? "保存中..." : "保存"}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+
+      {fileMetadataEditorState && (
+        <div className="metadata-editor-shell">
+          <div
+            className="metadata-editor-backdrop"
+            onMouseDown={() => setFileMetadataEditorState(null)}
+          />
+          <section className="metadata-editor file-metadata-editor">
+            <header className="metadata-editor-header">
+              <div>
+                <div className="metadata-editor-title">PDF 元数据设置</div>
+                <div className="metadata-editor-subtitle">
+                  {pdfName || pdfPath}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="metadata-editor-close-button"
+                onClick={() => setFileMetadataEditorState(null)}
+              >
+                ×
+              </button>
+            </header>
+            <div className="metadata-editor-body">
+              <label className="metadata-editor-field">
+                <span>PDF 类型</span>
+                <select
+                  value={fileMetadataEditorState.documentRole}
+                  disabled={fileMetadataEditorState.saving}
+                  onChange={(event) =>
+                    updateFileMetadataEditorField(
+                      "documentRole",
+                      event.target.value,
+                    )
+                  }
+                >
+                  <option value="">未设置</option>
+                  <option value="stemOnly">只有题干</option>
+                  <option value="stemAndAnswer">题干和答案</option>
+                  <option value="answerOnly">只有答案</option>
+                  <option value="mixed">综合</option>
+                </select>
+              </label>
+              <label className="metadata-editor-field">
+                <span>答案 PDF 文件名</span>
+                <input
+                  value={fileMetadataEditorState.answerPdfFileName}
+                  disabled={fileMetadataEditorState.saving}
+                  placeholder="例如：xxx答案.pdf"
+                  onChange={(event) =>
+                    updateFileMetadataEditorField(
+                      "answerPdfFileName",
+                      event.target.value,
+                    )
+                  }
+                />
+              </label>
+              <label className="metadata-editor-field">
+                <span>题干 PDF 文件名</span>
+                <input
+                  value={fileMetadataEditorState.stemPdfFileName}
+                  disabled={fileMetadataEditorState.saving}
+                  placeholder="例如：xxx题目.pdf"
+                  onChange={(event) =>
+                    updateFileMetadataEditorField(
+                      "stemPdfFileName",
+                      event.target.value,
+                    )
+                  }
+                />
+              </label>
+              {fileMetadataEditorState.error && (
+                <div className="metadata-editor-error">
+                  {fileMetadataEditorState.error}
+                </div>
+              )}
+            </div>
+            <footer className="metadata-editor-footer">
+              <button
+                type="button"
+                disabled={fileMetadataEditorState.saving}
+                onClick={() => setFileMetadataEditorState(null)}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                className="primary"
+                disabled={fileMetadataEditorState.saving}
+                onClick={saveFileMetadataEditor}
+              >
+                {fileMetadataEditorState.saving ? "保存中..." : "保存"}
               </button>
             </footer>
           </section>

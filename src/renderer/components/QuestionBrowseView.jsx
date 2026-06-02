@@ -1,16 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import PdfCompositeRegionView from "./PdfCompositeRegionView";
-import { getQuestionRegionsById } from "../questionRegionUtils";
+import {
+  getQuestionRegionsById,
+  getQuestionRegionsByIdAcrossSources,
+} from "../questionRegionUtils";
 
 const MIN_STEM_PERCENT = 20;
 const MAX_STEM_PERCENT = 65;
 
 export default function QuestionBrowseView({
   pdfDoc,
+  pdfDocsByTabId,
   questionId,
   onQuestionIdChange,
   freeRectangles,
   detectedRectangles,
+  sources = [],
+  missingRelatedFiles = [],
+  relatedErrors = [],
+  relatedWarnings = [],
   onBack,
 }) {
   const contentRef = useRef(null);
@@ -18,13 +26,32 @@ export default function QuestionBrowseView({
   const [stemPercent, setStemPercent] = useState(34);
   const [isDraggingSplitter, setIsDraggingSplitter] = useState(false);
   const questionRegions = useMemo(
-    () =>
-      getQuestionRegionsById(questionId, {
+    () => {
+      if (sources.length > 0) {
+        return getQuestionRegionsByIdAcrossSources(questionId, sources);
+      }
+
+      return getQuestionRegionsById(questionId, {
         freeRectangles,
         detectedRectangles,
-      }),
-    [questionId, freeRectangles, detectedRectangles],
+      });
+    },
+    [questionId, freeRectangles, detectedRectangles, sources],
   );
+  const sourceSummary = useMemo(() => {
+    const sourceNames = Array.from(
+      new Set(
+        [
+          ...questionRegions.stemRegions,
+          ...questionRegions.answerGroups.flatMap((group) => group.regions),
+        ]
+          .map((region) => region.sourcePdfName)
+          .filter(Boolean),
+      ),
+    );
+
+    return sourceNames.join(" / ");
+  }, [questionRegions]);
   const activeAnswerGroup =
     questionRegions.answerGroups.find(
       (group) => group.solutionNo === activeSolutionNo,
@@ -77,6 +104,11 @@ export default function QuestionBrowseView({
       <header className="question-browse-toolbar">
         <div className="question-browse-title-block">
           <div className="question-browse-title">实体浏览模式</div>
+          {sourceSummary && (
+            <div className="question-browse-source-summary">
+              {sourceSummary}
+            </div>
+          )}
           <label className="question-browse-id-field">
             <span>questionId</span>
             <input value={questionId} onChange={handleQuestionIdChange} />
@@ -112,6 +144,7 @@ export default function QuestionBrowseView({
             <div className="question-browse-pane-body">
               <PdfCompositeRegionView
                 pdfDoc={pdfDoc}
+                pdfDocsByTabId={pdfDocsByTabId}
                 regions={questionRegions.stemRegions}
                 mode="compose"
                 className="question-browse-region-view"
@@ -127,9 +160,29 @@ export default function QuestionBrowseView({
           <section className="question-browse-answer-pane">
             <div className="question-browse-pane-title">答案</div>
             <div className="question-browse-pane-body">
+              {(relatedErrors.length > 0 ||
+                relatedWarnings.length > 0 ||
+                missingRelatedFiles.length > 0) && (
+                <div className="question-browse-related-status">
+                  {relatedErrors.map((message) => (
+                    <div key={`error:${message}`} className="error">
+                      {message}
+                    </div>
+                  ))}
+                  {relatedWarnings.map((message) => (
+                    <div key={`warning:${message}`}>{message}</div>
+                  ))}
+                  {missingRelatedFiles.map((file) => (
+                    <div key={file.pdfPath}>
+                      正在准备关联文件：{file.fileName}
+                    </div>
+                  ))}
+                </div>
+              )}
               {activeAnswerGroup ? (
                 <PdfCompositeRegionView
                   pdfDoc={pdfDoc}
+                  pdfDocsByTabId={pdfDocsByTabId}
                   regions={activeAnswerGroup.regions}
                   mode="compose"
                   className="question-browse-region-view"

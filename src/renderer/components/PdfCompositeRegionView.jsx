@@ -18,6 +18,7 @@ function getTargetWidth(regions, maxWidth) {
 
 export default function PdfCompositeRegionView({
   pdfDoc,
+  pdfDocsByTabId,
   regions = [],
   mode = "compose",
   maxWidth,
@@ -36,6 +37,26 @@ export default function PdfCompositeRegionView({
     maxWidth || usableContainerWidth || undefined,
   );
   const activeRegion = safeRegions[Math.min(activeIndex, safeRegions.length - 1)];
+
+  function getPdfDocForRegion(region) {
+    if (region?.sourceTabId && pdfDocsByTabId?.has?.(region.sourceTabId)) {
+      return pdfDocsByTabId.get(region.sourceTabId);
+    }
+
+    if (region?.sourceTabId) {
+      return null;
+    }
+
+    return pdfDoc;
+  }
+
+  function renderMissingPdfDoc(region) {
+    return (
+      <div className="pdf-composite-region-missing-doc">
+        PDF 文档准备中：{region?.sourcePdfName || region?.sourcePdfPath || "unknown"}
+      </div>
+    );
+  }
 
   useEffect(() => {
     const container = containerRef.current;
@@ -73,12 +94,16 @@ export default function PdfCompositeRegionView({
         ref={containerRef}
       >
         <div className="pdf-composite-region-body">
-          <PdfRegionCanvas
-            pdfDoc={pdfDoc}
-            region={activeRegion}
-            targetWidth={targetWidth}
-            className="pdf-composite-region-canvas"
-          />
+          {getPdfDocForRegion(activeRegion) ? (
+            <PdfRegionCanvas
+              pdfDoc={getPdfDocForRegion(activeRegion)}
+              region={activeRegion}
+              targetWidth={targetWidth}
+              className="pdf-composite-region-canvas"
+            />
+          ) : (
+            renderMissingPdfDoc(activeRegion)
+          )}
         </div>
         {safeRegions.length > 1 && (
           <div className="pdf-composite-region-controls">
@@ -111,13 +136,22 @@ export default function PdfCompositeRegionView({
       ref={containerRef}
     >
       {safeRegions.map((region, index) => (
-        <PdfRegionCanvas
-          key={getRegionKey(region, index)}
-          pdfDoc={pdfDoc}
-          region={region}
-          targetWidth={targetWidth}
-          className="pdf-composite-region-canvas"
-        />
+        getPdfDocForRegion(region) ? (
+          <PdfRegionCanvas
+            key={getRegionKey(region, index)}
+            pdfDoc={getPdfDocForRegion(region)}
+            region={region}
+            targetWidth={targetWidth}
+            className="pdf-composite-region-canvas"
+          />
+        ) : (
+          <div
+            key={getRegionKey(region, index)}
+            className="pdf-composite-region-missing-doc"
+          >
+            PDF 文档准备中：{region.sourcePdfName || region.sourcePdfPath || "unknown"}
+          </div>
+        )
       ))}
     </div>
   );
