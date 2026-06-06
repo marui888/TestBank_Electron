@@ -55,7 +55,7 @@ pdfjs.GlobalWorkerOptions.cMapPacked = true;
 
 export default function App() {
   const DEFAULT_SECONDARY_WIDTH = 260;
-  const MAX_AUTO_OPEN_RELATED_PDFS = 8;
+  const MAX_AUTO_OPEN_RELATED_PDFS = 30;
   const leftTabs = [
     { id: "tools", label: "PDF Tools", icon: faFilePdf },
     { id: "layers", label: "Layers", icon: faLayerGroup },
@@ -123,6 +123,10 @@ export default function App() {
   const [contentViewMode, setContentViewMode] = useState("both");
   const [workspaceMode, setWorkspaceMode] = useState("annotate");
   const [browseQuestionId, setBrowseQuestionId] = useState("");
+  const [browseTarget, setBrowseTarget] = useState(null);
+  const [hasQueryWindowState, setHasQueryWindowState] = useState(false);
+  const [queryWindowResetToken, setQueryWindowResetToken] = useState(0);
+  const [questionRegionGapDefault, setQuestionRegionGapDefault] = useState(0);
   const [activeLeftTab, setActiveLeftTab] = useState("tools");
   const [activeRightTab, setActiveRightTab] = useState("tools");
   const [isDraggingSplitter, setIsDraggingSplitter] = useState(false);
@@ -465,15 +469,30 @@ export default function App() {
     if (!pdfObjectUrl) return null;
     return pdfObjectUrl;
   }, [pdfObjectUrl]);
+  const browseSourceTab = useMemo(
+    () =>
+      (browseTarget?.tabId
+        ? pdfTabs.find((tab) => tab.id === browseTarget.tabId)
+        : null) || null,
+    [browseTarget, pdfTabs],
+  );
+  const browseSourcePdfPath = browseTarget?.pdfPath || browseSourceTab?.pdfPath || pdfPath;
+  const browseSourceMetadata = browseSourceTab?.sourceMetadata || sourceMetadata;
   const relatedPdfResolution = useMemo(
     () =>
       getRelatedPdfResolution({
-        currentPdfPath: pdfPath,
-        sourceMetadata,
+        currentPdfPath: browseSourcePdfPath,
+        sourceMetadata: browseSourceMetadata,
         pdfTabs,
-        activePdfTabId,
+        activePdfTabId: browseTarget?.tabId || activePdfTabId,
       }),
-    [pdfPath, sourceMetadata, pdfTabs, activePdfTabId],
+    [
+      browseTarget,
+      browseSourcePdfPath,
+      browseSourceMetadata,
+      pdfTabs,
+      activePdfTabId,
+    ],
   );
 
   function calculateFitScale(pdfWidth, pdfHeight) {
@@ -912,16 +931,16 @@ export default function App() {
   useEffect(() => {
     skippedRelatedOpenPathsRef.current.clear();
   }, [
-    pdfPath,
-    sourceMetadata?.documentRole,
-    sourceMetadata?.answerPdfFileName,
-    sourceMetadata?.stemPdfFileName,
+    browseSourcePdfPath,
+    browseSourceMetadata?.documentRole,
+    browseSourceMetadata?.answerPdfFileName,
+    browseSourceMetadata?.stemPdfFileName,
   ]);
 
   useEffect(() => {
     if (workspaceMode !== "entityBrowse") return;
     if (!browseQuestionId) return;
-    if (!pdfPath || !sourceMetadata) return;
+    if (!browseSourcePdfPath || !browseSourceMetadata) return;
 
     if (relatedPdfResolution.errors.length > 0) {
       setSaveStatus(relatedPdfResolution.errors[0]);
@@ -934,8 +953,8 @@ export default function App() {
   }, [
     workspaceMode,
     browseQuestionId,
-    pdfPath,
-    sourceMetadata,
+    browseSourcePdfPath,
+    browseSourceMetadata,
     pdfTabs,
     activePdfTabId,
     metadataRevision,
@@ -1878,8 +1897,86 @@ export default function App() {
     const questionId = rect.businessProps?.questionId;
     if (!questionId) return;
 
+    setBrowseTarget({
+      tabId: activePdfTabId || "",
+      pdfPath,
+      questionId,
+    });
+    setHasQueryWindowState(true);
     setBrowseQuestionId(questionId);
     setWorkspaceMode("entityBrowse");
+  }
+
+  function handleBrowseQuestionIdChange(nextQuestionId) {
+    setBrowseTarget({
+      tabId: activePdfTabId || "",
+      pdfPath,
+      questionId: nextQuestionId || "",
+    });
+    setBrowseQuestionId(nextQuestionId || "");
+  }
+
+  function enterEntityBrowseMode() {
+    if (hasQueryWindowState) {
+      setWorkspaceMode("entityBrowse");
+      return;
+    }
+
+    setHasQueryWindowState(true);
+    setBrowseTarget({
+      tabId: activePdfTabId || "",
+      pdfPath,
+      questionId: browseQuestionId || "",
+    });
+    setWorkspaceMode("entityBrowse");
+  }
+
+  function exitQueryWindow() {
+    setWorkspaceMode("annotate");
+    setHasQueryWindowState(false);
+    setBrowseTarget(null);
+    setBrowseQuestionId("");
+    setQueryWindowResetToken((oldToken) => oldToken + 1);
+  }
+
+  function hideQueryWindow() {
+    setWorkspaceMode("annotate");
+  }
+
+  function getSearchResultFirstPage(result) {
+    const entity = result?.entity || {};
+    const firstStemRegion = entity.stemRegions?.[0];
+    const firstAnswerRegion = entity.answerGroups?.[0]?.regions?.[0];
+    const firstAnalysisRegion = entity.analysisRegions?.[0];
+    const page =
+      firstStemRegion?.page || firstAnswerRegion?.page || firstAnalysisRegion?.page;
+    const numericPage = Number(page);
+
+    return Number.isFinite(numericPage) && numericPage > 0 ? numericPage : null;
+  }
+
+  function activatePdfTabAtPage(tabId, pageNumber) {
+    if (!tabId) return;
+
+    if (pageNumber) {
+      pdfTabsRef.current = pdfTabsRef.current.map((tab) =>
+        tab.id === tabId
+          ? {
+              ...tab,
+              currentPage: pageNumber,
+              pageInputValue: String(pageNumber),
+            }
+          : tab,
+      );
+      setPdfTabs(pdfTabsRef.current);
+    }
+
+    handleActivatePdfTab(tabId);
+
+    if (tabId === activePdfTabId && pageNumber) {
+      setCurrentPage(pageNumber);
+      setPageInputValue(String(pageNumber));
+    }
   }
 
   const visibleRectangles = rectangles.filter(
@@ -2345,15 +2442,35 @@ export default function App() {
           <QuestionBrowseView
             pdfDoc={pdfDocState}
             pdfDocsByTabId={pdfDocsByTabId}
+            resetToken={queryWindowResetToken}
+            questionRegionGapDefault={questionRegionGapDefault}
+            onQuestionRegionGapDefaultChange={setQuestionRegionGapDefault}
             questionId={browseQuestionId}
-            onQuestionIdChange={setBrowseQuestionId}
+            onQuestionIdChange={handleBrowseQuestionIdChange}
+            pdfTabs={pdfTabs}
+            onSearchResultSelect={(result) => {
+              const targetTabId = result?.tabId || result?.entity?.tabId;
+              setHasQueryWindowState(true);
+              setBrowseTarget({
+                tabId: targetTabId || "",
+                pdfPath: result?.pdfPath || result?.entity?.pdfPath || "",
+                questionId: result?.questionId || "",
+              });
+              setBrowseQuestionId(result?.questionId || "");
+            }}
+            onSearchResultJump={(result) => {
+              const targetTabId = result?.tabId || result?.entity?.tabId;
+              const pageNumber = getSearchResultFirstPage(result);
+              activatePdfTabAtPage(targetTabId, pageNumber);
+              hideQueryWindow();
+            }}
             freeRectangles={freeRectangles}
             detectedRectangles={detectedRectangles}
             sources={relatedPdfResolution.readySources}
             missingRelatedFiles={relatedPdfResolution.missingRelatedFiles}
             relatedErrors={relatedPdfResolution.errors}
             relatedWarnings={relatedPdfResolution.warnings}
-            onBack={() => setWorkspaceMode("annotate")}
+            onExitQuery={exitQueryWindow}
           />
         </div>
 
@@ -2565,9 +2682,9 @@ export default function App() {
                 <button
                   type="button"
                   className="entity-browse-entry-button"
-                  onClick={() => setWorkspaceMode("entityBrowse")}
+                  onClick={enterEntityBrowseMode}
                 >
-                  进入实体浏览
+                  {hasQueryWindowState ? "恢复查询窗口" : "打开查询窗口"}
                 </button>
               </div>
 

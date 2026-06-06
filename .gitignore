@@ -1,3 +1,7 @@
+output_picture/
+output_typst/
+doc/
+
 # Logs
 logs
 *.log

@@ -1,0 +1,16 @@
+\documentclass[UTF8]{ctexart}
+\usepackage{amsmath, amssymb}
+
+\begin{document}
+
+6. 化简：$\overrightarrow{AB}-\overrightarrow{DC}-\overrightarrow{CB}=$（  ）
+
+A. $\overrightarrow{AC}$
+
+B. $\overrightarrow{DA}$
+
+C. $\overrightarrow{AD}$
+
+D. $\overrightarrow{DB}$
+
+\end{document}

@@ -74,6 +74,15 @@ function getEditorTabs(schema) {
   }));
 }
 
+function isBusinessTabLocked(draftValue) {
+  if (draftValue?.isMultiRectPart !== true) return false;
+  return String(draftValue?.fragmentOrder || "") !== "1";
+}
+
+function isEditorTabDisabled(tabId, draftValue) {
+  return tabId === "business" && isBusinessTabLocked(draftValue);
+}
+
 function getSectionedFieldRows(schema) {
   const sections = [];
   let currentSection = null;
@@ -189,6 +198,14 @@ export default function ShapePropertyEditor({
 
     setActiveTabId(tabs[0]?.id || "");
   }, [open, editorKey, tabs]);
+
+  useEffect(() => {
+    if (!open || !activeTabId) return;
+    if (!isEditorTabDisabled(activeTabId, draftValue)) return;
+
+    const nextTab = tabs.find((tab) => !isEditorTabDisabled(tab.id, draftValue));
+    setActiveTabId(nextTab?.id || "");
+  }, [open, activeTabId, draftValue, tabs]);
 
   useEffect(() => {
     function handleMouseMove(e) {
@@ -337,6 +354,7 @@ export default function ShapePropertyEditor({
               <button
                 key={tab.id}
                 type="button"
+                disabled={isEditorTabDisabled(tab.id, draftValue)}
                 className={`shape-property-tab-button ${
                   activeTabId === tab.id ? "active" : ""
                 }`}

@@ -2,6 +2,21 @@ import { app, BrowserWindow, dialog, ipcMain, session } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import started from 'electron-squirrel-startup';
+import {
+  convertImageToSource,
+  convertLatexFragmentToTypstAll,
+  convertLatexFragmentToTypstFragment,
+  getOutputFormatExtension,
+  getOutputFormatLabel,
+  getOutputPictureDir,
+  getPngBytesFromDataUrl,
+  getPromptOutputFormat,
+  getSafeOutputPictureDir,
+  getTypstOutputDir,
+  normalizeOutputFormat,
+  sanitizeOutputBaseName,
+  sanitizeOutputPictureFileName,
+} from './main/imageMathConvertService.js';
 
 if (started) {
   app.quit();
@@ -179,6 +194,170 @@ function registerIpcHandlers() {
       metaJsonPath,
       metadata: nextData,
       savedAt: nextData.updatedAt,
+    };
+  });
+
+  ipcMain.handle('questionSearch:save', async (_event, data) => {
+    const recentFiles = await readRecentFiles();
+    const defaultPath = recentFiles[0]
+      ? path.join(path.dirname(recentFiles[0]), 'question-search.json')
+      : 'question-search.json';
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Save question search',
+      defaultPath,
+      filters: [{ name: 'JSON Files', extensions: ['json'] }],
+    });
+
+    if (result.canceled || !result.filePath) {
+      return { canceled: true };
+    }
+
+    const savedAt = new Date().toISOString();
+    const nextData = {
+      ...data,
+      savedAt,
+    };
+
+    await fs.writeFile(result.filePath, JSON.stringify(nextData, null, 2), 'utf8');
+
+    return {
+      canceled: false,
+      filePath: result.filePath,
+      savedAt,
+    };
+  });
+
+  ipcMain.handle('questionSearch:open', async () => {
+    const recentFiles = await readRecentFiles();
+    const defaultPath = recentFiles[0] ? path.dirname(recentFiles[0]) : undefined;
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Open question search',
+      defaultPath,
+      properties: ['openFile'],
+      filters: [{ name: 'JSON Files', extensions: ['json'] }],
+    });
+
+    if (result.canceled || !result.filePaths[0]) {
+      return { canceled: true };
+    }
+
+    const text = await fs.readFile(result.filePaths[0], 'utf8');
+
+    return {
+      canceled: false,
+      filePath: result.filePaths[0],
+      data: JSON.parse(text),
+    };
+  });
+
+  ipcMain.handle('typst:selectImage', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select image for Typst conversion',
+      defaultPath: getOutputPictureDir(),
+      properties: ['openFile'],
+      filters: [
+        { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] },
+      ],
+    });
+
+    if (result.canceled || !result.filePaths[0]) {
+      return { canceled: true };
+    }
+
+    return {
+      canceled: false,
+      imagePath: result.filePaths[0],
+    };
+  });
+
+  ipcMain.handle('typst:convertImage', async (_event, payload = {}) => {
+    const imagePath = payload.imagePath || '';
+    const outputDir = getTypstOutputDir();
+    const baseName = sanitizeOutputBaseName(path.basename(imagePath));
+    const outputFormat = normalizeOutputFormat(payload.outputFormat);
+    const promptOutputFormat = getPromptOutputFormat(outputFormat);
+    const outputExtension = getOutputFormatExtension(outputFormat);
+    const outputFormatLabel = getOutputFormatLabel(outputFormat);
+    const rawPath = path.join(outputDir, `${baseName}.${outputFormat}.qwen.raw.txt`);
+    const sourcePath = path.join(outputDir, `${baseName}.${outputFormat}.${outputExtension}`);
+    const latexPath = path.join(outputDir, `${baseName}.latex.tex`);
+    const result = await convertImageToSource({
+      imagePath,
+      baseUrl: payload.baseUrl,
+      model: payload.model,
+      client: payload.client,
+      outputFormat,
+    });
+
+    await fs.mkdir(outputDir, { recursive: true });
+    await fs.writeFile(rawPath, result.rawText, 'utf8');
+
+    let sourceCode = result.sourceCode;
+
+    if (
+      outputFormat === 'latex-to-typst-local-math-only' ||
+      outputFormat === 'latex-to-typst-local-all'
+    ) {
+      await fs.writeFile(latexPath, result.sourceCode, 'utf8');
+      sourceCode = outputFormat === 'latex-to-typst-local-all'
+        ? convertLatexFragmentToTypstAll(result.sourceCode)
+        : convertLatexFragmentToTypstFragment(result.sourceCode);
+    }
+
+    await fs.writeFile(sourcePath, sourceCode, 'utf8');
+
+    return {
+      outputDir,
+      rawPath,
+      typstPath: outputFormat === 'typst' ? sourcePath : '',
+      sourcePath,
+      latexPath: outputFormat === 'latex-to-typst-local-math-only' ||
+        outputFormat === 'latex-to-typst-local-all'
+        ? latexPath
+        : '',
+      rawText: result.rawText,
+      typstCode: outputFormat === 'typst' ? sourceCode : '',
+      sourceCode,
+      modelSourceCode: result.sourceCode,
+      model: payload.model,
+      baseUrl: payload.baseUrl,
+      clientUsed: result.clientUsed,
+      outputFormat,
+      outputFormatLabel,
+      promptOutputFormat,
+    };
+  });
+
+  ipcMain.handle('outputPicture:selectDir', async (_event, defaultPath) => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select output picture folder',
+      defaultPath: getSafeOutputPictureDir(defaultPath),
+      properties: ['openDirectory', 'createDirectory'],
+    });
+
+    if (result.canceled || !result.filePaths[0]) {
+      return { canceled: true };
+    }
+
+    return {
+      canceled: false,
+      outputDir: result.filePaths[0],
+    };
+  });
+
+  ipcMain.handle('outputPicture:save', async (_event, fileName, pngDataUrl, outputDir) => {
+    const safeOutputDir = getSafeOutputPictureDir(outputDir);
+    const safeFileName = sanitizeOutputPictureFileName(fileName);
+    const outputPath = path.join(safeOutputDir, safeFileName);
+    const pngBytes = getPngBytesFromDataUrl(pngDataUrl);
+
+    await fs.mkdir(safeOutputDir, { recursive: true });
+    await fs.writeFile(outputPath, pngBytes);
+
+    return {
+      outputDir: safeOutputDir,
+      outputPath,
+      fileName: safeFileName,
     };
   });
 

@@ -1,5 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import PdfRegionCanvas from "./PdfRegionCanvas";
+import { exportCompositeRegionsToPngDataUrl } from "../pdfCompositeExportUtils";
 
 function getRegionKey(region, index) {
   return `${region.shapeType || "region"}:${region.id || index}:${region.page}`;
@@ -16,26 +24,121 @@ function getTargetWidth(regions, maxWidth) {
   return Math.max(1, Math.min(maxWidth || widestRegion, widestRegion));
 }
 
-export default function PdfCompositeRegionView({
+function normalizeRegionGap(regionGap) {
+  const numericGap = Number(regionGap);
+  return Number.isFinite(numericGap) && numericGap > 0 ? numericGap : 0;
+}
+
+function getTotalGap(regions, regionGap) {
+  return Math.max(0, regions.length - 1) * normalizeRegionGap(regionGap);
+}
+
+function getComposeTargetWidth(regions, maxWidth, maxHeight, regionGap = 0) {
+  if (!regions.length) return 1;
+
+  const widthLimitedTargetWidth = getTargetWidth(regions, maxWidth);
+  const heightLimitedTargetWidth = (() => {
+    if (!maxHeight || maxHeight < 1) return widthLimitedTargetWidth;
+
+    const totalHeightRatio = regions.reduce((sum, region) => {
+      if (!region?.width || !region?.height) return sum;
+      return sum + region.height / region.width;
+    }, 0);
+
+    if (!totalHeightRatio) return widthLimitedTargetWidth;
+
+    return Math.max(
+      1,
+      (maxHeight - getTotalGap(regions, regionGap)) / totalHeightRatio,
+    );
+  })();
+
+  return Math.max(
+    1,
+    Math.min(widthLimitedTargetWidth, heightLimitedTargetWidth),
+  );
+}
+
+function isTallStripRegion(region) {
+  if (!region?.width || !region?.height) return false;
+  return region.height / region.width >= 1.6;
+}
+
+function getResolvedLayoutMode(regions, layoutMode) {
+  if (layoutMode === "vertical" || layoutMode === "horizontal") {
+    return layoutMode;
+  }
+
+  if (regions.length <= 1) return "vertical";
+
+  const tallStripCount = regions.filter(isTallStripRegion).length;
+  return tallStripCount > regions.length / 2 ? "horizontal" : "vertical";
+}
+
+function getHorizontalTargetHeight(regions, maxWidth, maxHeight, regionGap = 0) {
+  if (!regions.length) return 1;
+
+  const tallestRegion = regions.reduce(
+    (tallest, region) => Math.max(tallest, region.height || 0),
+    1,
+  );
+  const widthRatioSum = regions.reduce((sum, region) => {
+    if (!region?.width || !region?.height) return sum;
+    return sum + region.width / region.height;
+  }, 0);
+  const widthLimitedTargetHeight =
+    maxWidth && widthRatioSum
+      ? Math.max(
+          1,
+          (maxWidth - getTotalGap(regions, regionGap)) / widthRatioSum,
+        )
+      : tallestRegion;
+  const heightLimitedTargetHeight = maxHeight || tallestRegion;
+
+  return Math.max(
+    1,
+    Math.min(tallestRegion, widthLimitedTargetHeight, heightLimitedTargetHeight),
+  );
+}
+
+function PdfCompositeRegionView({
   pdfDoc,
   pdfDocsByTabId,
   regions = [],
   mode = "compose",
+  layoutMode = "auto",
+  regionGap = 0,
+  exportFileName = "composite-region.png",
   maxWidth,
   className = "",
-}) {
+}, ref) {
   const containerRef = useRef(null);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [containerWidth, setContainerWidth] = useState(0);
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const safeRegions = useMemo(
     () => regions.filter((region) => region?.width > 0 && region?.height > 0),
     [regions],
   );
-  const usableContainerWidth = containerWidth >= 20 ? containerWidth : 0;
-  const targetWidth = getTargetWidth(
+  const usableContainerWidth = containerSize.width >= 20 ? containerSize.width : 0;
+  const usableContainerHeight =
+    containerSize.height >= 20 ? containerSize.height : 0;
+  const resolvedLayoutMode = getResolvedLayoutMode(safeRegions, layoutMode);
+  const safeRegionGap = normalizeRegionGap(regionGap);
+  const composeTargetHeight = getHorizontalTargetHeight(
     safeRegions,
     maxWidth || usableContainerWidth || undefined,
+    usableContainerHeight || undefined,
+    safeRegionGap,
   );
+  const targetWidth =
+    mode === "compose" && resolvedLayoutMode === "vertical"
+      ? getComposeTargetWidth(
+          safeRegions,
+          maxWidth || usableContainerWidth || undefined,
+          usableContainerHeight || undefined,
+          safeRegionGap,
+        )
+      : getTargetWidth(safeRegions, maxWidth || usableContainerWidth || undefined);
   const activeRegion = safeRegions[Math.min(activeIndex, safeRegions.length - 1)];
 
   function getPdfDocForRegion(region) {
@@ -58,18 +161,86 @@ export default function PdfCompositeRegionView({
     );
   }
 
+  async function exportCurrentCompositeImage() {
+    if (!window.electronPdf?.saveOutputPicture) {
+      return {
+        ok: false,
+        reason: "saveOutputPicture IPC 不可用，请重启应用后再试。",
+      };
+    }
+
+    if (safeRegions.length === 0) {
+      return {
+        ok: false,
+        reason: "没有可导出的矩形内容。",
+      };
+    }
+
+    try {
+      const dataUrl = await exportCompositeRegionsToPngDataUrl({
+        pdfDoc,
+        pdfDocsByTabId,
+        regions: safeRegions,
+        layoutMode,
+        regionGap: safeRegionGap,
+      });
+
+      if (!dataUrl) {
+        return {
+          ok: false,
+          reason: "没有生成图片数据。",
+        };
+      }
+
+      const savedResult = await window.electronPdf.saveOutputPicture(
+        exportFileName,
+        dataUrl,
+      );
+
+      return {
+        ok: true,
+        ...savedResult,
+      };
+    } catch (error) {
+      console.error("[composite-export] failed:", error);
+      return {
+        ok: false,
+        reason: error?.message || String(error),
+      };
+    }
+  }
+
+  useImperativeHandle(ref, () => ({
+    exportImage: exportCurrentCompositeImage,
+  }));
+
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return undefined;
+    const sizeSource = container.parentElement || container;
 
-    function updateContainerWidth() {
-      setContainerWidth(container.clientWidth);
+    function updateContainerSize() {
+      const nextSize = {
+        width: Math.round(sizeSource.clientWidth),
+        height: Math.round(sizeSource.clientHeight),
+      };
+
+      setContainerSize((oldSize) => {
+        if (
+          oldSize.width === nextSize.width &&
+          oldSize.height === nextSize.height
+        ) {
+          return oldSize;
+        }
+
+        return nextSize;
+      });
     }
 
-    updateContainerWidth();
+    updateContainerSize();
 
-    const resizeObserver = new ResizeObserver(updateContainerWidth);
-    resizeObserver.observe(container);
+    const resizeObserver = new ResizeObserver(updateContainerSize);
+    resizeObserver.observe(sizeSource);
 
     return () => {
       resizeObserver.disconnect();
@@ -132,8 +303,9 @@ export default function PdfCompositeRegionView({
 
   return (
     <div
-      className={`pdf-composite-region-view compose ${className}`}
+      className={`pdf-composite-region-view compose ${resolvedLayoutMode} ${className}`}
       ref={containerRef}
+      style={{ gap: `${safeRegionGap}px` }}
     >
       {safeRegions.map((region, index) => (
         getPdfDocForRegion(region) ? (
@@ -141,7 +313,11 @@ export default function PdfCompositeRegionView({
             key={getRegionKey(region, index)}
             pdfDoc={getPdfDocForRegion(region)}
             region={region}
-            targetWidth={targetWidth}
+            targetWidth={
+              resolvedLayoutMode === "horizontal"
+                ? composeTargetHeight * (region.width / region.height)
+                : targetWidth
+            }
             className="pdf-composite-region-canvas"
           />
         ) : (
@@ -156,3 +332,5 @@ export default function PdfCompositeRegionView({
     </div>
   );
 }
+
+export default forwardRef(PdfCompositeRegionView);

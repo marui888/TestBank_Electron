@@ -589,7 +589,7 @@ const PdfMainView = forwardRef(function PdfMainView(
       onAuxClick={(e) => {
         if (e.button === 1) e.preventDefault();
       }}
-      onMouseLeaveCapture={clearDraftInteraction}
+      onMouseLeave={clearDraftInteraction}
     >
       <div className="main-view-inner" ref={mainViewInnerRef}>
         {displayPdf && memoFile && (
