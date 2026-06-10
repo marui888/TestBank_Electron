@@ -5,6 +5,7 @@ import {
   faGear,
   faLayerGroup,
 } from "@fortawesome/free-solid-svg-icons";
+import { nanoid } from "nanoid";
 import { pdfjs } from "react-pdf";
 import ShapePropertyEditor from "./components/ShapePropertyEditor";
 import PdfMainView from "./components/PdfMainView";
@@ -29,13 +30,17 @@ import {
 } from "./shapeProperties/shapePropertyUtils";
 import { getDefaultBusinessProps } from "./shapeProperties/shapePropertyDefaults";
 import {
-  findInnermostRectangles,
+  findInnermostRectanglesFromRegionRectsAndHorizontalLines,
   formatNumber,
   getRandomColor,
   getLineDragHotZone,
   getLineResizeHandles,
+  getRegionPartitionGuideLineSourceRectId,
+  isRegionPartitionGuideLine,
+  REGION_PARTITION_GUIDE_LINE_TYPE,
   getRectDragHotZones,
   getRectResizeHandles,
+  roundLineGeometry,
   toPdfCoordinates,
   toPdfLineCoordinates,
 } from "./pdfWorkspaceGeometry";
@@ -140,6 +145,9 @@ export default function App() {
   const [fileMetadataEditorState, setFileMetadataEditorState] = useState(null);
   const [questionContextMenuState, setQuestionContextMenuState] =
     useState(null);
+  const [shapeContextMenuState, setShapeContextMenuState] = useState(null);
+  const [regionSplitMode, setRegionSplitMode] = useState(null);
+  const [regionSplitPreviewLine, setRegionSplitPreviewLine] = useState(null);
   const [clearState, setClearState] = useState(null);
   const [matchInteractionRecords, setMatchInteractionRecords] = useState([]);
   const dragStartX = useRef(0);
@@ -280,7 +288,16 @@ export default function App() {
     }
   }
 
+  function getValidPageNumber(page) {
+    const numericPage = Number(page);
+    return Number.isInteger(numericPage) && numericPage > 0
+      ? numericPage
+      : null;
+  }
+
   function getOpenedPdfTab(result, workspace) {
+    const initialPage = getValidPageNumber(result?.lastPage) || 1;
+
     return {
       ...getCurrentPdfTabSnapshot({
         id: createPdfTabId(result.pdfPath),
@@ -293,8 +310,8 @@ export default function App() {
         displayPdf: true,
         hasUnsavedChanges: false,
         saveStatus: result.pdfJson ? "Loaded .pdfJson" : "No .pdfJson found",
-        currentPage: 1,
-        pageInputValue: "1",
+        currentPage: initialPage,
+        pageInputValue: String(initialPage),
         totalPages: 0,
         pageSize: { width: 0, height: 0 },
         scale: 1,
@@ -317,6 +334,37 @@ export default function App() {
         questionSegmentRangeMode: "default",
       }),
     };
+  }
+
+  function getPdfViewStateEntries() {
+    const activeSnapshot = activePdfTabId
+      ? getCurrentPdfTabSnapshot({ id: activePdfTabId })
+      : null;
+    const tabs = pdfTabsRef.current.map((tab) =>
+      activeSnapshot && tab.id === activeSnapshot.id
+        ? {
+            ...tab,
+            ...activeSnapshot,
+          }
+        : tab,
+    );
+
+    return tabs
+      .map((tab) => ({
+        pdfPath: tab.pdfPath,
+        page: getValidPageNumber(tab.currentPage),
+      }))
+      .filter((entry) => entry.pdfPath && entry.page);
+  }
+
+  async function savePdfViewState(pdfPathToSave = pdfPath, pageToSave = currentPage) {
+    if (!pdfPathToSave || !window.electronPdf?.savePdfViewState) return;
+
+    try {
+      await window.electronPdf.savePdfViewState(pdfPathToSave, pageToSave);
+    } catch (error) {
+      console.error("[view-state] save failed:", error);
+    }
   }
 
   function hydratePdfTab(tab, options = {}) {
@@ -362,6 +410,9 @@ export default function App() {
     setMetadataEditorState(null);
     setFileMetadataEditorState(null);
     setQuestionContextMenuState(null);
+    setShapeContextMenuState(null);
+    setRegionSplitMode(null);
+    setRegionSplitPreviewLine(null);
     setClearState(null);
     setHasUnsavedChanges(Boolean(tab?.hasUnsavedChanges));
     setSaveStatus(tab?.saveStatus || "");
@@ -618,6 +669,9 @@ export default function App() {
     setMetadataRevision(0);
     setMetadataEditorState(null);
     setQuestionContextMenuState(null);
+    setShapeContextMenuState(null);
+    setRegionSplitMode(null);
+    setRegionSplitPreviewLine(null);
     setClearState(null);
     setHasUnsavedChanges(false);
     setSaveStatus("");
@@ -658,6 +712,9 @@ export default function App() {
     setMetadataEditorState(null);
     setFileMetadataEditorState(null);
     setQuestionContextMenuState(null);
+    setShapeContextMenuState(null);
+    setRegionSplitMode(null);
+    setRegionSplitPreviewLine(null);
     setClearState(null);
     pdfDataByTabIdRef.current.set(openedTab.id, result.pdfData);
     addDebugMessage("open:cache-stored", { tabId: openedTab.id });
@@ -721,6 +778,7 @@ export default function App() {
       setPdfJsonPath(result.jsonPath || pdfJsonPath);
       setHasUnsavedChanges(false);
       setSaveStatus("Saved");
+      await savePdfViewState();
       return true;
     } catch (error) {
       console.error("[file] save .pdfJson failed:", error);
@@ -745,6 +803,7 @@ export default function App() {
     const nextActiveTab =
       nextTabs[currentIndex] || nextTabs[currentIndex - 1] || null;
 
+    await savePdfViewState(pdfPath, currentPage);
     pdfDataByTabIdRef.current.delete(activePdfTabId);
     pendingPdfDocLoadTabIdsRef.current.delete(activePdfTabId);
     setPdfDocsByTabId((oldDocsByTabId) => {
@@ -929,6 +988,16 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    window.__getPdfViewStates = getPdfViewStateEntries;
+
+    return () => {
+      if (window.__getPdfViewStates === getPdfViewStateEntries) {
+        delete window.__getPdfViewStates;
+      }
+    };
+  });
+
+  useEffect(() => {
     skippedRelatedOpenPathsRef.current.clear();
   }, [
     browseSourcePdfPath,
@@ -1056,9 +1125,13 @@ export default function App() {
       });
     }
     setTotalPages(pdf.numPages);
-    if (totalPages <= 0) {
-      setCurrentPage(1);
-      setPageInputValue("1");
+    const safePage = Math.min(
+      Math.max(getValidPageNumber(currentPage) || 1, 1),
+      pdf.numPages,
+    );
+    if (safePage !== currentPage) {
+      setCurrentPage(safePage);
+      setPageInputValue(String(safePage));
       questionSegmentIdRef.current = null;
     }
   }
@@ -1189,6 +1262,8 @@ export default function App() {
     setSelectedRectId(null);
     setSelectedLineId(null);
     setPropertyEditorShape(null);
+    setRegionSplitMode(null);
+    setRegionSplitPreviewLine(null);
   }
 
   function goToPage(pageNumber) {
@@ -1378,9 +1453,26 @@ export default function App() {
     if (selectedShape.type === "detectedRect") return;
 
     if (selectedShape.type === "rect") {
-      setRectangles((oldRectangles) =>
-        oldRectangles.filter((rect) => rect.id !== selectedShape.id),
+      const selectedRect =
+        rectangles.find((rect) => rect.id === selectedShape.id) || null;
+      const nextRectangles = rectangles.filter(
+        (rect) => rect.id !== selectedShape.id,
       );
+      const nextLines = lines.filter(
+        (line) =>
+          getRegionPartitionGuideLineSourceRectId(line) !== selectedShape.id,
+      );
+
+      setRectangles(nextRectangles);
+      setLines(nextLines);
+      refreshDetectedRectanglesFromRectangles(
+        nextRectangles,
+        selectedRect?.page || currentPage,
+        nextLines,
+      );
+      if (regionSplitMode?.rectId === selectedShape.id) {
+        exitRegionSplitMode();
+      }
       setSelectedRectId(null);
     }
 
@@ -1405,7 +1497,7 @@ export default function App() {
   }
 
   function findRectanglesFromLines() {
-    refreshDetectedRectanglesFromLines(lines, currentPage);
+    refreshDetectedRectanglesFromGuides(lines, rectangles, currentPage);
 
     if (selectedShape?.type === "detectedRect") {
       setSelectedShape(null);
@@ -1414,9 +1506,27 @@ export default function App() {
     markWorkspaceDirty();
   }
 
-  function refreshDetectedRectanglesFromLines(nextLines, page) {
+  function getRegionPartitionRectsForPage(nextRectangles, page) {
+    return nextRectangles.filter((rect) => {
+      if (rect.page !== page) return false;
+      return (
+        (rect.businessProps?.purpose || "region_partition") ===
+        "region_partition"
+      );
+    });
+  }
+
+  function refreshDetectedRectanglesFromGuides(nextLines, nextRectangles, page) {
     const pageLines = nextLines.filter((line) => line.page === page);
-    const nextGeometryRects = findInnermostRectangles(pageLines);
+    const pageRegionRects = getRegionPartitionRectsForPage(
+      nextRectangles,
+      page,
+    );
+    const nextGeometryRects =
+      findInnermostRectanglesFromRegionRectsAndHorizontalLines(
+        pageRegionRects,
+        pageLines,
+      );
     const timestamp = new Date().toISOString();
 
     setDetectedRectangles((oldRectangles) => {
@@ -1425,9 +1535,9 @@ export default function App() {
         nextGeometryRects,
         page,
         updatedAt: timestamp,
-        createDetectedRect: (rect, index) => ({
+        createDetectedRect: (rect) => ({
           ...rect,
-          id: `${Date.now()}-${index}`,
+          id: nanoid(),
           page,
           createdAt: timestamp,
           updatedAt: timestamp,
@@ -1441,6 +1551,108 @@ export default function App() {
         ...nextPageRects,
       ];
     });
+  }
+
+  function refreshDetectedRectanglesFromLines(nextLines, page) {
+    refreshDetectedRectanglesFromGuides(nextLines, rectangles, page);
+  }
+
+  function refreshDetectedRectanglesFromRectangles(
+    nextRectangles,
+    page,
+    nextLines = lines,
+  ) {
+    refreshDetectedRectanglesFromGuides(nextLines, nextRectangles, page);
+  }
+
+  function isKeyboardEventFromEditableTarget(event) {
+    const target = event.target;
+    const tagName = target?.tagName?.toLowerCase();
+
+    return (
+      tagName === "input" ||
+      tagName === "textarea" ||
+      tagName === "select" ||
+      target?.isContentEditable
+    );
+  }
+
+  function moveSelectedLineByKeyboard(event) {
+    if (workspaceMode !== "annotate") return false;
+    if (selectedShape?.type !== "line" || !selectedLineId) return false;
+    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
+      return false;
+    }
+
+    if (isKeyboardEventFromEditableTarget(event)) {
+      return false;
+    }
+
+    const selectedLine = lines.find((line) => line.id === selectedLineId);
+    if (!selectedLine) return false;
+
+    if (
+      isRegionPartitionGuideLine(selectedLine) &&
+      (event.key === "ArrowLeft" || event.key === "ArrowRight")
+    ) {
+      event.preventDefault();
+      return true;
+    }
+
+    const screenStep = event.shiftKey ? 10 : 1;
+    const geometryStep = screenStep / Math.max(scale, 0.0001);
+    const dx =
+      event.key === "ArrowLeft"
+        ? -geometryStep
+        : event.key === "ArrowRight"
+          ? geometryStep
+          : 0;
+    const dy =
+      event.key === "ArrowUp"
+        ? -geometryStep
+        : event.key === "ArrowDown"
+          ? geometryStep
+          : 0;
+    const updatedAt = new Date().toISOString();
+    const nextLines = lines.map((line) =>
+      line.id === selectedLineId
+        ? roundLineGeometry({
+            ...line,
+            x1: line.x1 + dx,
+            y1: line.y1 + dy,
+            x2: line.x2 + dx,
+            y2: line.y2 + dy,
+            updatedAt,
+          })
+        : line,
+    );
+
+    event.preventDefault();
+    setLines(nextLines);
+    refreshDetectedRectanglesFromLines(nextLines, currentPage);
+    markWorkspaceDirty();
+    return true;
+  }
+
+  function confirmDeleteSelectedShape() {
+    if (!selectedShape || selectedShape.type === "detectedRect") return false;
+
+    const confirmed = window.confirm("确认删除当前选中对象？");
+    if (!confirmed) return false;
+
+    deleteSelectedShape();
+    return true;
+  }
+
+  function deleteSelectedShapeByKeyboard(event) {
+    if (workspaceMode !== "annotate") return false;
+    if (!event.ctrlKey || event.altKey || event.metaKey) return false;
+    if (event.key.toLowerCase() !== "d") return false;
+    if (isKeyboardEventFromEditableTarget(event)) return false;
+    if (!selectedShape || selectedShape.type === "detectedRect") return false;
+
+    event.preventDefault();
+    return confirmDeleteSelectedShape();
   }
 
   function openMetadataEditorForQuestion(questionId) {
@@ -1706,13 +1918,17 @@ export default function App() {
     };
 
     if (shapeRef.type === "rect") {
-      setRectangles((oldRectangles) =>
-        updateShapeBusinessPropsInList(
-          oldRectangles,
-          shapeRef.id,
-          businessProps,
-          shapePatch,
-        ),
+      const nextRectangles = updateShapeBusinessPropsInList(
+        rectangles,
+        shapeRef.id,
+        businessProps,
+        shapePatch,
+      );
+
+      setRectangles(nextRectangles);
+      refreshDetectedRectanglesFromRectangles(
+        nextRectangles,
+        oldShape?.page || currentPage,
       );
       markWorkspaceDirty();
       return;
@@ -1897,6 +2113,14 @@ export default function App() {
     const questionId = rect.businessProps?.questionId;
     if (!questionId) return;
 
+    showQuestionFromShapeRect(rect);
+  }
+
+  function showQuestionFromShapeRect(rect) {
+    const questionId = rect?.businessProps?.questionId;
+    if (!questionId) return;
+
+    exitRegionSplitMode();
     setBrowseTarget({
       tabId: activePdfTabId || "",
       pdfPath,
@@ -1907,7 +2131,78 @@ export default function App() {
     setWorkspaceMode("entityBrowse");
   }
 
+  function openSelectedShapeContextMenu({ x, y, rect, rectType }) {
+    const isCurrentRegionSplitRect =
+      regionSplitMode?.active &&
+      rectType === "rect" &&
+      rect?.id === regionSplitMode.rectId;
+    if (regionSplitMode?.active) {
+      if (!isCurrentRegionSplitRect) return;
+
+      setShapeContextMenuState({
+        x,
+        y,
+        rect,
+        rectType,
+        questionId: "",
+      });
+      return;
+    }
+
+    const isQuestionRect =
+      rectType === "freeRect" || rectType === "detectedRect";
+    const isRegionPartitionRect =
+      rectType === "rect" &&
+      (rect?.businessProps?.purpose || "region_partition") ===
+        "region_partition";
+    const questionId = rect?.businessProps?.questionId || "";
+
+    if (!isQuestionRect && !isRegionPartitionRect) return;
+    if (isQuestionRect && !questionId) return;
+
+    setShapeContextMenuState({
+      x,
+      y,
+      rect,
+      rectType,
+      questionId,
+    });
+  }
+
+  function showQuestionFromShapeContextMenu() {
+    if (!shapeContextMenuState?.rect) return;
+
+    showQuestionFromShapeRect(shapeContextMenuState.rect);
+    setShapeContextMenuState(null);
+  }
+
+  function enterRegionSplitModeFromContextMenu() {
+    if (shapeContextMenuState?.rectType !== "rect") return;
+
+    setRegionSplitMode({
+      active: true,
+      rectId: shapeContextMenuState.rect.id,
+      lineType: REGION_PARTITION_GUIDE_LINE_TYPE,
+    });
+    setRegionSplitPreviewLine(null);
+    setSelectedShape({ type: "rect", id: shapeContextMenuState.rect.id });
+    setSelectedRectId(shapeContextMenuState.rect.id);
+    setSelectedLineId(null);
+    setShapeContextMenuState(null);
+  }
+
+  function exitRegionSplitModeFromContextMenu() {
+    exitRegionSplitMode();
+    setShapeContextMenuState(null);
+  }
+
+  function exitRegionSplitMode() {
+    setRegionSplitMode(null);
+    setRegionSplitPreviewLine(null);
+  }
+
   function handleBrowseQuestionIdChange(nextQuestionId) {
+    exitRegionSplitMode();
     setBrowseTarget({
       tabId: activePdfTabId || "",
       pdfPath,
@@ -1917,6 +2212,8 @@ export default function App() {
   }
 
   function enterEntityBrowseMode() {
+    exitRegionSplitMode();
+
     if (hasQueryWindowState) {
       setWorkspaceMode("entityBrowse");
       return;
@@ -2043,7 +2340,9 @@ export default function App() {
     ? getLineDragHotZone(selectedLineForDrag, scale)
     : null;
   const selectedLineResizeHandles = selectedLineForDrag
-    ? getLineResizeHandles(selectedLineForDrag, scale)
+    ? isRegionPartitionGuideLine(selectedLineForDrag)
+      ? []
+      : getLineResizeHandles(selectedLineForDrag, scale)
     : [];
   const selectedPdfRect = selectedRectangleForInfo
     ? toPdfCoordinates(selectedRectangleForInfo, pageSize.height)
@@ -2147,6 +2446,15 @@ export default function App() {
 
   useEffect(() => {
     function handleKeyDown(e) {
+      if (regionSplitMode?.active && e.key === "Escape") {
+        e.preventDefault();
+        exitRegionSplitMode();
+        return;
+      }
+
+      if (deleteSelectedShapeByKeyboard(e)) return;
+      if (moveSelectedLineByKeyboard(e)) return;
+
       if (!e.ctrlKey || e.altKey || e.metaKey) return;
 
       if (e.key === "+" || e.key === "=") {
@@ -2189,6 +2497,28 @@ export default function App() {
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [questionContextMenuState]);
+
+  useEffect(() => {
+    if (!shapeContextMenuState) return undefined;
+
+    function closeShapeContextMenu() {
+      setShapeContextMenuState(null);
+    }
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape") {
+        closeShapeContextMenu();
+      }
+    }
+
+    window.addEventListener("mousedown", closeShapeContextMenu);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("mousedown", closeShapeContextMenu);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [shapeContextMenuState]);
 
   return (
     <div className="app-container">
@@ -2323,7 +2653,7 @@ export default function App() {
                     disabled={
                       !selectedShape || selectedShape.type === "detectedRect"
                     }
-                    onClick={deleteSelectedShape}
+                    onClick={confirmDeleteSelectedShape}
                   >
                     Delete
                   </button>
@@ -2449,6 +2779,7 @@ export default function App() {
             onQuestionIdChange={handleBrowseQuestionIdChange}
             pdfTabs={pdfTabs}
             onSearchResultSelect={(result) => {
+              exitRegionSplitMode();
               const targetTabId = result?.tabId || result?.entity?.tabId;
               setHasQueryWindowState(true);
               setBrowseTarget({
@@ -2459,6 +2790,7 @@ export default function App() {
               setBrowseQuestionId(result?.questionId || "");
             }}
             onSearchResultJump={(result) => {
+              exitRegionSplitMode();
               const targetTabId = result?.tabId || result?.entity?.tabId;
               const pageNumber = getSearchResultFirstPage(result);
               activatePdfTabAtPage(targetTabId, pageNumber);
@@ -2576,6 +2908,19 @@ export default function App() {
                     }
                     onLinesEdited={
                       isActive ? refreshDetectedRectanglesFromLines : noop
+                    }
+                    onRectanglesEdited={
+                      isActive ? refreshDetectedRectanglesFromRectangles : noop
+                    }
+                    onSelectedShapeContextMenu={
+                      isActive ? openSelectedShapeContextMenu : noop
+                    }
+                    regionSplitMode={isActive ? regionSplitMode : null}
+                    regionSplitPreviewLine={
+                      isActive ? regionSplitPreviewLine : null
+                    }
+                    onRegionSplitPreviewChange={
+                      isActive ? setRegionSplitPreviewLine : noop
                     }
                   />
                 </div>
@@ -2880,6 +3225,45 @@ export default function App() {
           <button type="button" onClick={editQuestionContextMenuSegment}>
             编辑小节元数据
           </button>
+        </div>
+      )}
+
+      {shapeContextMenuState && (
+        <div
+          className="question-context-menu"
+          style={{
+            left: shapeContextMenuState.x,
+            top: shapeContextMenuState.y,
+          }}
+          onMouseDown={(event) => event.stopPropagation()}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          {(shapeContextMenuState.rectType === "freeRect" ||
+            shapeContextMenuState.rectType === "detectedRect") && (
+            <button type="button" onClick={showQuestionFromShapeContextMenu}>
+              显示题目
+            </button>
+          )}
+          {shapeContextMenuState.rectType === "rect" && (
+            <>
+              {regionSplitMode?.active &&
+              regionSplitMode.rectId === shapeContextMenuState.rect.id ? (
+                <button
+                  type="button"
+                  onClick={exitRegionSplitModeFromContextMenu}
+                >
+                  退出切分模式
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={enterRegionSplitModeFromContextMenu}
+                >
+                  进入切分模式
+                </button>
+              )}
+            </>
+          )}
         </div>
       )}
 

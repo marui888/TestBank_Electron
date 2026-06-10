@@ -110,6 +110,12 @@ const questionBusinessFields = [
 export const shapePropertySchemas = {
   rect: [
     {
+      name: "displayIndex",
+      label: "序号",
+      type: "text",
+      defaultValue: "",
+    },
+    {
       name: "purpose",
       label: "用途",
       type: "select",

@@ -1,6 +1,7 @@
 import { forwardRef, useImperativeHandle, useRef } from "react";
 import { Document, Page } from "react-pdf";
 import { Stage, Layer, Rect, Line } from "react-konva";
+import { nanoid } from "nanoid";
 import PdfAnnotatedRect from "./PdfAnnotatedRect";
 import { getDefaultBusinessProps } from "../shapeProperties/shapePropertyDefaults";
 import { getPdfRectSlots } from "../pdfRectSlots";
@@ -8,18 +9,23 @@ import {
   getDistance,
   getDraggedLine,
   getDraggedRect,
+  getRegionPartitionGuideLineGeometry,
   getLineDraftFromDrag,
   getLineLength,
   getLineMidpoint,
   getLineResizeHandleHitZones,
   getRectDragHotZones,
   getRectResizeHandleHitZones,
+  isRegionPartitionGuideLine,
   isPointInsideBox,
   isPointNearLine,
   isPointOnRectDragBorder,
   normalizeLine,
   normalizeRect,
+  syncRegionPartitionGuideLinesWithRect,
 } from "../pdfWorkspaceGeometry";
+
+const MIN_DRAW_SCREEN_DISTANCE = 50;
 
 const PdfMainView = forwardRef(function PdfMainView(
   {
@@ -70,6 +76,11 @@ const PdfMainView = forwardRef(function PdfMainView(
     onPageLoadError,
     onRectSlotDoubleClick,
     onLinesEdited,
+    onRectanglesEdited,
+    onSelectedShapeContextMenu,
+    regionSplitMode,
+    regionSplitPreviewLine,
+    onRegionSplitPreviewChange,
   },
   ref,
 ) {
@@ -80,8 +91,11 @@ const PdfMainView = forwardRef(function PdfMainView(
   const dragShapeRef = useRef(null);
   const latestLinesRef = useRef(lines);
   const editedLinesRef = useRef(null);
+  const latestRectanglesRef = useRef(rectangles);
+  const editedRectanglesRef = useRef(null);
 
   latestLinesRef.current = lines;
+  latestRectanglesRef.current = rectangles;
 
   useImperativeHandle(
     ref,
@@ -107,6 +121,43 @@ const PdfMainView = forwardRef(function PdfMainView(
 
   function handleStageContextMenu(e) {
     e.evt.preventDefault();
+    const stage = konvaStageRef.current;
+    const pos = stage?.getPointerPosition();
+
+    if (!stage || !pos) return;
+    if (
+      selectedShape?.type !== "rect" &&
+      selectedShape?.type !== "freeRect" &&
+      selectedShape?.type !== "detectedRect"
+    ) {
+      return;
+    }
+
+    const rect = getShapeByRef(selectedShape);
+    if (!rect) return;
+
+    const pagePoint = {
+      x: pos.x / scale,
+      y: pos.y / scale,
+    };
+
+    if (!isPointInsideBox(pagePoint, rect)) return;
+
+    if (regionSplitMode?.active) {
+      if (
+        selectedShape.type !== "rect" ||
+        selectedShape.id !== regionSplitMode.rectId
+      ) {
+        return;
+      }
+    }
+
+    onSelectedShapeContextMenu?.({
+      x: e.evt.clientX,
+      y: e.evt.clientY,
+      rect,
+      rectType: selectedShape.type,
+    });
   }
 
   function handleStageDoubleClick(e) {
@@ -140,6 +191,44 @@ const PdfMainView = forwardRef(function PdfMainView(
       x: pos.x / scale,
       y: pos.y / scale,
     };
+
+    if (regionSplitMode?.active) {
+      e.evt.preventDefault();
+      if (button !== 0) return;
+
+      const rect = rectangles.find((item) => item.id === regionSplitMode.rectId);
+      if (!rect || !isPointInsideBox(pagePoint, rect)) return;
+
+      const timestamp = new Date().toISOString();
+      const guideGeometry = getRegionPartitionGuideLineGeometry(
+        rect,
+        pagePoint.y,
+      );
+      const nextLine = {
+        ...guideGeometry,
+        id: nanoid(),
+        page: currentPage,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        generator: {
+          type: regionSplitMode.lineType,
+          sourceRectId: rect.id,
+        },
+        businessProps: getDefaultBusinessProps("line"),
+      };
+      const nextLines = [...latestLinesRef.current, nextLine];
+
+      latestLinesRef.current = nextLines;
+      setLines(nextLines);
+      onLinesEdited?.(nextLines, currentPage);
+      setCurrentLine(null);
+      setCurrentRect(null);
+      setIsDrawingShape(false);
+      setIsDraggingShape(false);
+      onRegionSplitPreviewChange?.(null);
+      markWorkspaceDirty();
+      return;
+    }
 
     if (button === 0) {
       const dragTarget = findSelectedDragHotZone(pagePoint);
@@ -188,12 +277,18 @@ const PdfMainView = forwardRef(function PdfMainView(
       }
     }
 
+    if (button === 2 && findHitRectBody(pagePoint)) {
+      return;
+    }
+
     if (button !== 0 && button !== 2) return;
 
     drawStartRef.current = {
       button,
       x: pagePoint.x,
       y: pagePoint.y,
+      screenX: pos.x,
+      screenY: pos.y,
       lastPoint: pagePoint,
       draftType: null,
       draftShape: null,
@@ -207,9 +302,30 @@ const PdfMainView = forwardRef(function PdfMainView(
 
   function handleStageMouseMove() {
     const stage = konvaStageRef.current;
+    const pos = stage?.getPointerPosition();
+
+    if (stage && regionSplitMode?.active) {
+      if (!pos) return;
+
+      const rect = rectangles.find((item) => item.id === regionSplitMode.rectId);
+      const pagePoint = {
+        x: pos.x / scale,
+        y: pos.y / scale,
+      };
+
+      if (!rect || !isPointInsideBox(pagePoint, rect)) {
+        onRegionSplitPreviewChange?.(null);
+        return;
+      }
+
+      onRegionSplitPreviewChange?.(
+        getRegionPartitionGuideLineGeometry(rect, pagePoint.y),
+      );
+      return;
+    }
+
     const dragState = dragShapeRef.current;
     if (stage && dragState) {
-      const pos = stage.getPointerPosition();
       if (!pos) return;
 
       const pagePoint = {
@@ -225,8 +341,6 @@ const PdfMainView = forwardRef(function PdfMainView(
 
     const start = drawStartRef.current;
     if (!stage || !start) return;
-
-    const pos = stage.getPointerPosition();
     if (!pos) return;
 
     const pagePoint = {
@@ -262,12 +376,18 @@ const PdfMainView = forwardRef(function PdfMainView(
     if (dragShapeRef.current) {
       const dragState = dragShapeRef.current;
       const nextLines = editedLinesRef.current || latestLinesRef.current;
+      const nextRectangles =
+        editedRectanglesRef.current || latestRectanglesRef.current;
 
       dragShapeRef.current = null;
       editedLinesRef.current = null;
+      editedRectanglesRef.current = null;
       setIsDraggingShape(false);
       if (dragState.type === "line") {
         onLinesEdited?.(nextLines, currentPage);
+      }
+      if (dragState.type === "rect") {
+        onRectanglesEdited?.(nextRectangles, currentPage, nextLines);
       }
       markWorkspaceDirty();
       return;
@@ -289,6 +409,19 @@ const PdfMainView = forwardRef(function PdfMainView(
       x: pos.x / scale,
       y: pos.y / scale,
     };
+    const screenDistance = Math.hypot(
+      pos.x - draft.screenX,
+      pos.y - draft.screenY,
+    );
+
+    if (screenDistance < MIN_DRAW_SCREEN_DISTANCE) {
+      setCurrentRect(null);
+      setCurrentLine(null);
+      setIsDrawingShape(false);
+      drawStartRef.current = null;
+      return;
+    }
+
     const finalLine = getLineDraftFromDrag(draft, endPoint, scale);
     const finalType = finalLine
       ? "line"
@@ -309,7 +442,7 @@ const PdfMainView = forwardRef(function PdfMainView(
         const timestamp = new Date().toISOString();
         const nextLine = {
           ...normalizedLine,
-          id: Date.now(),
+          id: nanoid(),
           page: currentPage,
           createdAt: timestamp,
           updatedAt: timestamp,
@@ -340,7 +473,7 @@ const PdfMainView = forwardRef(function PdfMainView(
       const timestamp = new Date().toISOString();
       const nextRect = {
         ...normalizedRect,
-        id: Date.now(),
+        id: nanoid(),
         page: currentPage,
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -350,7 +483,11 @@ const PdfMainView = forwardRef(function PdfMainView(
       if (finalType === "freeRect") {
         setFreeRectangles((oldRectangles) => [...oldRectangles, nextRect]);
       } else {
-        setRectangles((oldRectangles) => [...oldRectangles, nextRect]);
+        const nextRectangles = [...latestRectanglesRef.current, nextRect];
+
+        latestRectanglesRef.current = nextRectangles;
+        setRectangles(nextRectangles);
+        onRectanglesEdited?.(nextRectangles, currentPage);
       }
       setSelectedShape({ type: finalType, id: nextRect.id });
       setSelectedRectId(nextRect.id);
@@ -363,10 +500,6 @@ const PdfMainView = forwardRef(function PdfMainView(
   }
 
   function findBorderHitRect(point) {
-    const manualRects = visibleRectangles.map((rect) => ({
-      ...rect,
-      shapeType: "rect",
-    }));
     const freeRects = visibleFreeRectangles.map((rect) => ({
       ...rect,
       shapeType: "freeRect",
@@ -375,7 +508,7 @@ const PdfMainView = forwardRef(function PdfMainView(
       ...rect,
       shapeType: "detectedRect",
     }));
-    const hitRects = [...manualRects, ...detectedRects, ...freeRects]
+    const hitRects = [...detectedRects, ...freeRects]
       .reverse()
       .filter((rect) => isPointOnRectDragBorder(point, rect, scale));
 
@@ -389,6 +522,26 @@ const PdfMainView = forwardRef(function PdfMainView(
 
       return rectDistance < bestDistance ? rect : bestRect;
     });
+  }
+
+  function findHitRectBody(point) {
+    const manualRects = visibleRectangles.map((rect) => ({
+      ...rect,
+      shapeType: "rect",
+    }));
+    const detectedRects = visibleDetectedRectangles.map((rect) => ({
+      ...rect,
+      shapeType: "detectedRect",
+    }));
+    const freeRects = visibleFreeRectangles.map((rect) => ({
+      ...rect,
+      shapeType: "freeRect",
+    }));
+    const hitRects = [...manualRects, ...detectedRects, ...freeRects]
+      .reverse()
+      .filter((rect) => isPointInsideBox(point, rect));
+
+    return hitRects[0] || null;
   }
 
   function findSelectedDragHotZone(point) {
@@ -425,7 +578,9 @@ const PdfMainView = forwardRef(function PdfMainView(
       const line = lines.find((item) => item.id === selectedShape.id);
       if (!line) return null;
 
-      const resizeHandle = findLineResizeHandle(point, line);
+      const resizeHandle = isRegionPartitionGuideLine(line)
+        ? null
+        : findLineResizeHandle(point, line);
       if (resizeHandle) {
         return {
           type: "line",
@@ -472,7 +627,8 @@ const PdfMainView = forwardRef(function PdfMainView(
 
       return (
         isPointNearLine(point, line, scale) ||
-        Boolean(findLineResizeHandle(point, line))
+        (!isRegionPartitionGuideLine(line) &&
+          Boolean(findLineResizeHandle(point, line)))
       );
     }
 
@@ -526,11 +682,28 @@ const PdfMainView = forwardRef(function PdfMainView(
 
   function moveDraggedShape(dragState, dx, dy) {
     if (dragState.type === "rect") {
-      setRectangles((oldRectangles) =>
-        oldRectangles.map((rect) =>
-          rect.id === dragState.id ? getDraggedRect(dragState, dx, dy) : rect,
-        ),
+      let draggedRect = null;
+      const nextRectangles = latestRectanglesRef.current.map((rect) =>
+        rect.id === dragState.id
+          ? (draggedRect = getDraggedRect(dragState, dx, dy))
+          : rect,
       );
+
+      latestRectanglesRef.current = nextRectangles;
+      editedRectanglesRef.current = nextRectangles;
+      setRectangles(nextRectangles);
+
+      if (draggedRect) {
+        const nextLines = syncRegionPartitionGuideLinesWithRect(
+          latestLinesRef.current,
+          draggedRect,
+        );
+
+        latestLinesRef.current = nextLines;
+        editedLinesRef.current = nextLines;
+        setLines(nextLines);
+      }
+
       return;
     }
 
@@ -546,7 +719,11 @@ const PdfMainView = forwardRef(function PdfMainView(
     if (dragState.type === "line") {
       setLines((oldLines) => {
         const nextLines = oldLines.map((line) =>
-          line.id === dragState.id ? getDraggedLine(dragState, dx, dy) : line,
+          line.id === dragState.id
+            ? isRegionPartitionGuideLine(line)
+              ? getDraggedLine(dragState, 0, dy)
+              : getDraggedLine(dragState, dx, dy)
+            : line,
         );
 
         latestLinesRef.current = nextLines;
@@ -573,7 +750,21 @@ const PdfMainView = forwardRef(function PdfMainView(
   }
 
   function handleRectSlotDoubleClick(payload) {
-    onRectSlotDoubleClick?.(payload);
+    const { rect, rectType } = payload || {};
+    if (!rect || !rectType) return;
+
+    setSelectedShape({ type: rectType, id: rect.id });
+    setSelectedRectId(rect.id);
+    setSelectedLineId(null);
+    setPropertyEditorShape({ type: rectType, id: rect.id });
+  }
+
+  function handleRectSlotClick({ rect, rectType }) {
+    if (!rect || !rectType) return;
+
+    setSelectedShape({ type: rectType, id: rect.id });
+    setSelectedRectId(rect.id);
+    setSelectedLineId(null);
   }
 
   return (
@@ -653,6 +844,7 @@ const PdfMainView = forwardRef(function PdfMainView(
                       slots={getPdfRectSlots(rect, "rect", {
                         index: index + 1,
                       })}
+                      onSlotClick={handleRectSlotClick}
                       onSlotDoubleClick={handleRectSlotDoubleClick}
                     />
                   ))}
@@ -700,6 +892,7 @@ const PdfMainView = forwardRef(function PdfMainView(
                       slots={getPdfRectSlots(rect, "detectedRect", {
                         index: index + 1,
                       })}
+                      onSlotClick={handleRectSlotClick}
                       onSlotDoubleClick={handleRectSlotDoubleClick}
                     />
                   ))}
@@ -726,6 +919,7 @@ const PdfMainView = forwardRef(function PdfMainView(
                       slots={getPdfRectSlots(rect, "freeRect", {
                         index: index + 1,
                       })}
+                      onSlotClick={handleRectSlotClick}
                       onSlotDoubleClick={handleRectSlotDoubleClick}
                     />
                   ))}
@@ -821,6 +1015,21 @@ const PdfMainView = forwardRef(function PdfMainView(
                       stroke="blue"
                       strokeWidth={1}
                       dash={[6, 4]}
+                    />
+                  )}
+
+                  {regionSplitPreviewLine && (
+                    <Line
+                      points={[
+                        regionSplitPreviewLine.x1 * scale,
+                        regionSplitPreviewLine.y1 * scale,
+                        regionSplitPreviewLine.x2 * scale,
+                        regionSplitPreviewLine.y2 * scale,
+                      ]}
+                      stroke="rgba(14, 165, 233, 0.95)"
+                      strokeWidth={2}
+                      dash={[8, 4]}
+                      listening={false}
                     />
                   )}
                 </Layer>

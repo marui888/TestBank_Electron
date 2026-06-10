@@ -4,6 +4,10 @@ contextBridge.exposeInMainWorld('electronPdf', {
   getRecentFiles: () => ipcRenderer.invoke('pdf:getRecentFiles'),
   openPdf: () => ipcRenderer.invoke('pdf:openDialog'),
   openRecentPdf: (pdfPath) => ipcRenderer.invoke('pdf:openRecent', pdfPath),
+  savePdfViewState: (pdfPath, page) =>
+    ipcRenderer.invoke('pdf:saveViewState', pdfPath, page),
+  savePdfViewStates: (entries) =>
+    ipcRenderer.invoke('pdf:saveViewStates', entries),
   savePdfJson: (pdfPath, data) => ipcRenderer.invoke('pdf:saveJson', pdfPath, data),
   saveMetaJson: (pdfPath, data) => ipcRenderer.invoke('pdf:saveMetaJson', pdfPath, data),
   saveQuestionSearch: (data) => ipcRenderer.invoke('questionSearch:save', data),

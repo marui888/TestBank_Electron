@@ -1,8 +1,10 @@
 output_picture/
 output_typst/
 doc/
+无人机操控.*
 
 # Logs
+
 logs
 *.log
 npm-debug.log*

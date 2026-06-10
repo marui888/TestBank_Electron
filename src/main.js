@@ -23,11 +23,17 @@ if (started) {
 }
 
 let mainWindow;
+let isClosingMainWindow = false;
 
 const recentFilesName = 'recent-files.json';
+const pdfViewStateName = 'pdf-view-state.json';
 
 function getRecentFilesPath() {
   return path.join(app.getPath('userData'), recentFilesName);
+}
+
+function getPdfViewStatePath() {
+  return path.join(app.getPath('userData'), pdfViewStateName);
 }
 
 function getPdfJsonPath(pdfPath) {
@@ -66,6 +72,67 @@ async function rememberRecentFile(pdfPath) {
 
   await writeRecentFiles(nextFiles);
   return nextFiles;
+}
+
+async function readPdfViewState() {
+  try {
+    const text = await fs.readFile(getPdfViewStatePath(), 'utf8');
+    const state = JSON.parse(text);
+    return state && typeof state === 'object' && !Array.isArray(state)
+      ? state
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+async function writePdfViewState(state) {
+  await fs.mkdir(app.getPath('userData'), { recursive: true });
+  await fs.writeFile(
+    getPdfViewStatePath(),
+    JSON.stringify(state, null, 2),
+    'utf8',
+  );
+}
+
+function getValidPageNumber(page) {
+  const numericPage = Number(page);
+  return Number.isInteger(numericPage) && numericPage > 0 ? numericPage : null;
+}
+
+function normalizePdfViewStateEntries(entries) {
+  return (Array.isArray(entries) ? entries : [])
+    .map((entry) => ({
+      pdfPath: typeof entry?.pdfPath === 'string' ? entry.pdfPath : '',
+      page: getValidPageNumber(entry?.page),
+    }))
+    .filter((entry) => entry.pdfPath && entry.page);
+}
+
+async function savePdfViewStates(entries) {
+  const normalizedEntries = normalizePdfViewStateEntries(entries);
+  if (normalizedEntries.length === 0) return readPdfViewState();
+
+  const oldState = await readPdfViewState();
+  const updatedAt = new Date().toISOString();
+  const nextState = {
+    ...oldState,
+  };
+
+  normalizedEntries.forEach((entry) => {
+    nextState[entry.pdfPath] = {
+      page: entry.page,
+      updatedAt,
+    };
+  });
+
+  await writePdfViewState(nextState);
+  return nextState;
+}
+
+async function getPdfLastPage(pdfPath) {
+  const state = await readPdfViewState();
+  return getValidPageNumber(state?.[pdfPath]?.page);
 }
 
 async function readPdfJson(pdfPath) {
@@ -122,6 +189,7 @@ async function openPdfByPath(pdfPath) {
   const jsonResult = await readPdfJson(pdfPath);
   const metaJsonResult = await readMetaJson(pdfPath);
   const recentFiles = await rememberRecentFile(pdfPath);
+  const lastPage = await getPdfLastPage(pdfPath);
 
   return {
     pdfPath,
@@ -135,6 +203,7 @@ async function openPdfByPath(pdfPath) {
     pdfMetaJsonPath: metaJsonResult.metaJsonPath,
     pdfMetaJson: metaJsonResult.data,
     pdfMetaJsonError: metaJsonResult.error,
+    lastPage,
     recentFiles,
   };
 }
@@ -164,6 +233,16 @@ function registerIpcHandlers() {
 
   ipcMain.handle('pdf:openRecent', async (_event, pdfPath) => {
     return openPdfByPath(pdfPath);
+  });
+
+  ipcMain.handle('pdf:saveViewState', async (_event, pdfPath, page) => {
+    await savePdfViewStates([{ pdfPath, page }]);
+    return { savedAt: new Date().toISOString() };
+  });
+
+  ipcMain.handle('pdf:saveViewStates', async (_event, entries) => {
+    await savePdfViewStates(entries);
+    return { savedAt: new Date().toISOString() };
   });
 
   ipcMain.handle('pdf:saveJson', async (_event, pdfPath, data) => {
@@ -388,6 +467,24 @@ function createWindow() {
   });
 
   mainWindow.maximize();
+
+  mainWindow.on('close', async (event) => {
+    if (isClosingMainWindow) return;
+
+    event.preventDefault();
+    isClosingMainWindow = true;
+
+    try {
+      const entries = await mainWindow.webContents.executeJavaScript(
+        'window.__getPdfViewStates?.() || []',
+      );
+      await savePdfViewStates(entries);
+    } catch (error) {
+      console.error('Save PDF view states on close failed:', error);
+    } finally {
+      mainWindow.destroy();
+    }
+  });
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);

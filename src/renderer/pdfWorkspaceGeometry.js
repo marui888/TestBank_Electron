@@ -1,3 +1,60 @@
+const GEOMETRY_PRECISION = 1000;
+export const REGION_PARTITION_GUIDE_LINE_TYPE = "regionPartitionGuideLine";
+export const REGION_PARTITION_GUIDE_LINE_OVERFLOW = 2;
+
+export function roundGeometry(value) {
+  return Math.round(value * GEOMETRY_PRECISION) / GEOMETRY_PRECISION;
+}
+
+export function roundLineGeometry(line) {
+  return {
+    ...line,
+    x1: roundGeometry(line.x1),
+    y1: roundGeometry(line.y1),
+    x2: roundGeometry(line.x2),
+    y2: roundGeometry(line.y2),
+  };
+}
+
+export function isRegionPartitionGuideLine(line) {
+  return line?.generator?.type === REGION_PARTITION_GUIDE_LINE_TYPE;
+}
+
+export function getRegionPartitionGuideLineSourceRectId(line) {
+  return isRegionPartitionGuideLine(line)
+    ? line.generator?.sourceRectId || ""
+    : "";
+}
+
+export function getRegionPartitionGuideLineGeometry(rect, y) {
+  const normalizedRect = normalizeRect(rect);
+  const lineY = roundGeometry(y);
+
+  return roundLineGeometry({
+    orientation: "horizontal",
+    x1: normalizedRect.x - REGION_PARTITION_GUIDE_LINE_OVERFLOW,
+    y1: lineY,
+    x2:
+      normalizedRect.x +
+      normalizedRect.width +
+      REGION_PARTITION_GUIDE_LINE_OVERFLOW,
+    y2: lineY,
+  });
+}
+
+export function syncRegionPartitionGuideLinesWithRect(lines, rect) {
+  return lines.map((line) => {
+    if (getRegionPartitionGuideLineSourceRectId(line) !== rect.id) {
+      return line;
+    }
+
+    return {
+      ...line,
+      ...getRegionPartitionGuideLineGeometry(rect, line.y1),
+    };
+  });
+}
+
 export function normalizeRect(rect) {
   const x1 = rect.x;
   const y1 = rect.y;
@@ -483,6 +540,94 @@ export function findInnermostRectangles(sourceLines) {
       }
     }
   }
+
+  return candidateRects.filter(
+    (rect, index) =>
+      !candidateRects.some(
+        (otherRect, otherIndex) =>
+          otherIndex !== index && isRectInside(otherRect, rect),
+      ),
+  );
+}
+
+function getUniqueSortedNumbers(values, epsilon = 0.001) {
+  return [...values]
+    .sort((a, b) => a - b)
+    .filter(
+      (value, index, sortedValues) =>
+        index === 0 || Math.abs(value - sortedValues[index - 1]) > epsilon,
+    );
+}
+
+function getNormalizedRectBounds(rect) {
+  const normalized = normalizeRect(rect);
+
+  return {
+    left: normalized.x,
+    top: normalized.y,
+    right: normalized.x + normalized.width,
+    bottom: normalized.y + normalized.height,
+    width: normalized.width,
+    height: normalized.height,
+  };
+}
+
+export function findInnermostRectanglesFromRegionRectsAndHorizontalLines(
+  regionRects,
+  sourceLines,
+) {
+  const epsilon = 0.001;
+  const horizontals = sourceLines
+    .filter((line) => line.orientation === "horizontal")
+    .map((line) => ({
+      y: line.y1,
+      x1: Math.min(line.x1, line.x2),
+      x2: Math.max(line.x1, line.x2),
+    }));
+  const candidateRects = [];
+
+  regionRects.forEach((regionRect) => {
+    const bounds = getNormalizedRectBounds(regionRect);
+
+    if (bounds.width <= epsilon || bounds.height <= epsilon) {
+      return;
+    }
+
+    const innerHorizontalYs = horizontals
+      .filter(
+        (line) =>
+          line.y > bounds.top + epsilon &&
+          line.y < bounds.bottom - epsilon &&
+          line.x1 <= bounds.left + epsilon &&
+          line.x2 >= bounds.right - epsilon,
+      )
+      .map((line) => line.y);
+    const yCoords = getUniqueSortedNumbers(
+      [bounds.top, ...innerHorizontalYs, bounds.bottom],
+      epsilon,
+    );
+
+    for (let index = 0; index < yCoords.length - 1; index += 1) {
+      const top = yCoords[index];
+      const bottom = yCoords[index + 1];
+
+      if (bottom - top <= epsilon) {
+        continue;
+      }
+
+      candidateRects.push({
+        x: bounds.left,
+        y: top,
+        width: bounds.width,
+        height: bottom - top,
+        generator: {
+          type: "regionRectHorizontalLines",
+          sourceRectId: regionRect.id,
+          segmentIndex: index + 1,
+        },
+      });
+    }
+  });
 
   return candidateRects.filter(
     (rect, index) =>

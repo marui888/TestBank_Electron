@@ -1,6 +1,16 @@
 ## 打包报错
 $env:ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
 
+## 查询系统代理和设置系统代理
+Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings" | Select-Object ProxyEnable, ProxyServer
+
+git config --global http.proxy http://127.0.0.1:7890
+git config --global https.proxy http://127.0.0.1:7890
+
+git remote -v
+git config --global --get http.proxy
+git config --global --get https.proxy
+
 ## 打开大型PDF，UI冻结。
 
 问题根因基本清楚了：

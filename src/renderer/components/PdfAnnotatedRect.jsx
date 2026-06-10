@@ -18,6 +18,17 @@ function getScaledSlotMetrics(scale, baseScale = 1, hovered = false) {
   };
 }
 
+function applySlotSizeScale(metrics, sizeScale = 1) {
+  return {
+    ...metrics,
+    height: metrics.height * sizeScale,
+    paddingX: metrics.paddingX * sizeScale,
+    margin: metrics.margin * sizeScale,
+    fontSize: metrics.fontSize * sizeScale,
+    hoverGrowX: metrics.hoverGrowX * sizeScale,
+  };
+}
+
 function getSlotWidth(text, maxWidth, metrics) {
   const estimatedWidth =
     String(text || "").length * metrics.fontSize * 0.68 + metrics.paddingX * 2;
@@ -26,11 +37,24 @@ function getSlotWidth(text, maxWidth, metrics) {
 }
 
 function getSlotFrame(rect, scale, baseScale, slot, hovered = false) {
-  const metrics = getScaledSlotMetrics(scale, baseScale, hovered);
+  const baseMetrics = applySlotSizeScale(
+    getScaledSlotMetrics(scale, baseScale, false),
+    slot.sizeScale || 1,
+  );
+  const metrics = applySlotSizeScale(
+    getScaledSlotMetrics(scale, baseScale, hovered),
+    slot.sizeScale || 1,
+  );
   const rectX = rect.x * scale;
   const rectY = rect.y * scale;
   const rectWidth = rect.width * scale;
-  const maxSlotWidth = Math.max(18, rectWidth - metrics.margin * 2);
+  const leftOffset = slot.leftOfText
+    ? getSlotWidth(slot.leftOfText, rectWidth, baseMetrics) + baseMetrics.margin
+    : 0;
+  const maxSlotWidth = Math.max(
+    18,
+    rectWidth - metrics.margin * 2 - leftOffset,
+  );
   const baseWidth = getSlotWidth(slot.text, maxSlotWidth, metrics);
   const width = hovered
     ? Math.min(maxSlotWidth, baseWidth + metrics.hoverGrowX)
@@ -40,6 +64,31 @@ function getSlotFrame(rect, scale, baseScale, slot, hovered = false) {
   if (slot.position === "top-center-inside") {
     return {
       x: rectX + (rectWidth - width) / 2,
+      y: rectY + metrics.margin,
+      width,
+      height,
+      fontSize: metrics.fontSize,
+    };
+  }
+
+  if (
+    slot.position === "top-right-inside-row-1" ||
+    slot.position === "top-right-inside-row-2"
+  ) {
+    const rowIndex = slot.position === "top-right-inside-row-2" ? 1 : 0;
+
+    return {
+      x: rectX + rectWidth - width - metrics.margin,
+      y: rectY + metrics.margin + rowIndex * (height + metrics.margin),
+      width,
+      height,
+      fontSize: metrics.fontSize,
+    };
+  }
+
+  if (slot.position === "top-left-inside-after-index") {
+    return {
+      x: rectX + metrics.margin + leftOffset,
       y: rectY + metrics.margin,
       width,
       height,
@@ -71,6 +120,10 @@ function SlotDisplay({ rect, scale, baseScale, slot }) {
       onDblClick={(event) => {
         event.cancelBubble = true;
         slot.onDoubleClick?.();
+      }}
+      onClick={(event) => {
+        event.cancelBubble = true;
+        slot.onClick?.();
       }}
     >
       <Rect
@@ -115,17 +168,20 @@ export default function PdfAnnotatedRect({
   rectType,
   rectProps,
   slots,
+  onSlotClick,
   onSlotDoubleClick,
 }) {
   const { selectedStrokeWidth, ...konvaRectProps } = rectProps;
   const slotEntries = {
     index: {
       ...slots?.index,
+      onClick: () => onSlotClick?.({ slot: "index", rect, rectType }),
       onDoubleClick: () =>
         onSlotDoubleClick?.({ slot: "index", rect, rectType }),
     },
     label: {
       ...slots?.label,
+      onClick: () => onSlotClick?.({ slot: "label", rect, rectType }),
       onDoubleClick: () =>
         onSlotDoubleClick?.({ slot: "label", rect, rectType }),
     },

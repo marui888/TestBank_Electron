@@ -36,6 +36,14 @@ const businessLabelSlotStyles = {
   },
 };
 
+const businessLabelInlineSlotStyle = {
+  fill: "rgba(191, 219, 254, 0.76)",
+  stroke: "rgba(37, 99, 235, 0.56)",
+  textFill: "#0f172a",
+  hoverFill: "rgba(147, 197, 253, 0.88)",
+  hoverStroke: "rgba(29, 78, 216, 0.76)",
+};
+
 const purposeLabels = {
   region_partition: "区域划分",
   temporary: "临时",
@@ -61,23 +69,40 @@ function getBusinessLabelSlotStyle(rect) {
 }
 
 function getHelperLabel(rect) {
-  const purpose = rect.businessProps?.purpose || "";
+  const purpose = rect.businessProps?.purpose || "region_partition";
 
   return purposeLabels[purpose] || purpose;
 }
 
+function getRectDisplayIndex(rect, context) {
+  return rect.businessProps?.displayIndex || context.index || "";
+}
+
 export function getPdfRectSlots(rect, rectType, context = {}) {
+  const detectedIndexText = `D${context.index || ""}`;
+  const freeIndexText = `B${context.index || ""}`;
+
   if (rectType === "rect") {
     return {
       index: {
         visible: true,
-        text: `R${context.index || ""}`,
-        position: "top-left-inside",
+        text: `R${getRectDisplayIndex(rect, context)}`,
+        position: "top-right-inside-row-2",
+        sizeScale: 1.2,
+        fill: "rgba(255, 255, 255, 0.84)",
+        stroke: "rgba(71, 85, 105, 0.5)",
+        hoverFill: "rgba(255, 255, 255, 0.96)",
+        hoverStroke: "rgba(51, 65, 85, 0.72)",
       },
       label: {
         visible: Boolean(getHelperLabel(rect)),
         text: getHelperLabel(rect),
-        position: "top-center-inside",
+        position: "top-right-inside-row-1",
+        sizeScale: 1.2,
+        fill: "rgba(187, 247, 208, 0.72)",
+        stroke: "rgba(22, 101, 52, 0.48)",
+        hoverFill: "rgba(134, 239, 172, 0.86)",
+        hoverStroke: "rgba(21, 128, 61, 0.76)",
       },
     };
   }
@@ -86,14 +111,15 @@ export function getPdfRectSlots(rect, rectType, context = {}) {
     return {
       index: {
         visible: true,
-        text: `D${context.index || ""}`,
+        text: detectedIndexText,
         position: "top-left-inside",
       },
       label: {
         visible: Boolean(getBusinessLabel(rect)),
         text: getBusinessLabel(rect),
-        position: "top-center-inside",
-        ...getBusinessLabelSlotStyle(rect),
+        position: "top-left-inside-after-index",
+        leftOfText: detectedIndexText,
+        ...businessLabelInlineSlotStyle,
       },
     };
   }
@@ -101,14 +127,15 @@ export function getPdfRectSlots(rect, rectType, context = {}) {
   return {
     index: {
       visible: true,
-      text: `B${context.index || ""}`,
+      text: freeIndexText,
       position: "top-left-inside",
     },
     label: {
       visible: Boolean(getBusinessLabel(rect)),
       text: getBusinessLabel(rect),
-      position: "top-center-inside",
-      ...getBusinessLabelSlotStyle(rect),
+      position: "top-left-inside-after-index",
+      leftOfText: freeIndexText,
+      ...businessLabelInlineSlotStyle,
     },
   };
 }

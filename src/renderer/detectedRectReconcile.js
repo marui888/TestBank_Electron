@@ -34,7 +34,8 @@ function getDiagonal(rect) {
 function getMatchScore(oldRect, nextRect) {
   const iou = getIou(oldRect, nextRect);
   const distance = getCenterDistance(oldRect, nextRect);
-  const distanceLimit = Math.max(getDiagonal(oldRect), getDiagonal(nextRect)) * 0.35;
+  const distanceLimit =
+    Math.max(getDiagonal(oldRect), getDiagonal(nextRect)) * 0.35;
   const isClose = distanceLimit > 0 && distance <= distanceLimit;
 
   if (iou < 0.2 && !isClose) {
@@ -47,21 +48,77 @@ function getMatchScore(oldRect, nextRect) {
   return iou * 2 + distanceScore;
 }
 
+function getRectSource(rect) {
+  return rect?.generator || rect?.detectedSource || null;
+}
+
+function getSourceKey(rect) {
+  const source = getRectSource(rect);
+
+  if (!source?.type || !source?.sourceRectId) {
+    return "";
+  }
+
+  return `${source.type}:${source.sourceRectId}`;
+}
+
+function getSegmentIndex(rect) {
+  return getRectSource(rect)?.segmentIndex;
+}
+
+function getSourceMatchScore(oldRect, nextRect) {
+  const oldSourceKey = getSourceKey(oldRect);
+  const nextSourceKey = getSourceKey(nextRect);
+
+  if (!oldSourceKey || oldSourceKey !== nextSourceKey) {
+    return null;
+  }
+
+  const geometryScore = getMatchScore(oldRect, nextRect);
+  const sameSegment = getSegmentIndex(oldRect) === getSegmentIndex(nextRect);
+
+  if (geometryScore !== null) {
+    return geometryScore + (sameSegment ? 1 : 0.5);
+  }
+
+  if (sameSegment) {
+    return 0.1;
+  }
+
+  return null;
+}
+
 function findBestMatch(nextRect, oldRects, usedOldIndexes) {
-  let best = null;
+  const nextSourceKey = getSourceKey(nextRect);
 
-  oldRects.forEach((oldRect, oldIndex) => {
-    if (usedOldIndexes.has(oldIndex)) return;
+  function findMatch(scoreGetter) {
+    let best = null;
 
-    const score = getMatchScore(oldRect, nextRect);
-    if (score === null) return;
+    oldRects.forEach((oldRect, oldIndex) => {
+      if (usedOldIndexes.has(oldIndex)) return;
 
-    if (!best || score > best.score) {
-      best = { oldRect, oldIndex, score };
+      const score = scoreGetter(oldRect);
+      if (score === null) return;
+
+      if (!best || score > best.score) {
+        best = { oldRect, oldIndex, score };
+      }
+    });
+
+    return best;
+  }
+
+  if (nextSourceKey) {
+    const sourceMatch = findMatch((oldRect) => getSourceMatchScore(oldRect, nextRect));
+
+    if (sourceMatch) {
+      return sourceMatch;
     }
-  });
+  }
 
-  return best;
+  const geometryMatch = findMatch((oldRect) => getMatchScore(oldRect, nextRect));
+
+  return geometryMatch;
 }
 
 function hasGeometryChanged(oldRect, nextRect) {
